@@ -481,7 +481,8 @@ function viewOnboard(){
    <div class="gauges" style="max-width:340px;margin:0 auto"><div class="gauge">${gauge(.35)}<div class="g-lbl">₸ / км</div></div><div class="gauge big">${gauge(.6,true)}<div class="g-lbl">Затраты</div></div><div class="gauge">${gauge(.45)}<div class="g-lbl">л / 100</div></div></div>
    <h2 style="font:600 28px/1.1 var(--display);margin:14px 0 6px">Бортжурнал</h2>
    <p class="muted" style="margin:0 auto 16px;max-width:36ch">Заправки, ремонты и расходы, график ТО со шкалой ресурса и напоминания по пробегу и по дате.</p>
-   <button class="btn pri" data-act="caredit">${ico('car')} Добавить автомобиль</button>
+   <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button class="btn pri" data-act="caredit">${ico('car')} Добавить автомобиль</button><button class="btn" data-act="import">${ico('up')} Загрузить из файла</button></div>
+   <p class="muted" style="margin:10px auto 0;max-width:40ch;font-size:13px">Есть резервная копия, автокопия или файл истории? «Загрузить из файла» перенесёт машину со всеми записями.</p>
    <p class="store" style="margin-top:14px">${store==='device'?'Данные хранятся в памяти телефона.':store==='cloud'?'Данные сохраняются в вашем аккаунте Claude и видны только вам.':(inited?'Записи будут храниться в этом браузере.':'Загружаю хранилище…')}</p>
   </div>`;
 }
@@ -949,7 +950,12 @@ $('#mergeFile').addEventListener('change',async ev=>{
 window.__autoBackupChanged=function(){if($('#layer').innerHTML.includes('Настройки'))settingsSheet()};
 $('#importFile').addEventListener('change',async ev=>{
   const f=ev.target.files[0];ev.target.value='';if(!f)return;
-  try{const o=JSON.parse(await f.text());if(!o||!Array.isArray(o.cars)||!Array.isArray(o.events))throw 0;
+  let o=null;try{o=JSON.parse(await f.text())}catch(e){toast('Не удалось прочитать файл');return}
+  if(o&&o.kind==='import'&&Array.isArray(o.events)){
+    if(!car()){const c=Object.assign({id:uid(),odoLog:[]},{name:'Мой автомобиль'},o.car||{});S.cars.push(c);S.car=c.id;saveGarage();render()}
+    previewMerge(o);return;
+  }
+  try{if(!o||!Array.isArray(o.cars)||!Array.isArray(o.events))throw 0;
     S={cars:o.cars,car:o.car||o.cars[0]?.id||null,regs:o.regs||[],rems:o.rems||[],events:o.events,settings:Object.assign({warnKm:1000,warnDays:30,odoMonthly:true},o.settings||{})};
     saveAll();closeSheet();render();toast(`Восстановлено: ${S.events.length} событий`)}
   catch(e){toast('Это не файл резервной копии Бортжурнала')}
