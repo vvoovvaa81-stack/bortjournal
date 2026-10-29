@@ -36,6 +36,7 @@ object Scheduler {
                     .putExtra("title", o.optString("title"))
                     .putExtra("text", o.optString("text"))
                     .putExtra("nid", o.optString("id").hashCode())
+                    .putExtra("action", o.optString("action", ""))
                 val pi = PendingIntent.getBroadcast(
                     ctx, BASE + count, intent,
                     PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT

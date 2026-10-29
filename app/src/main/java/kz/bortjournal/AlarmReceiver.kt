@@ -9,6 +9,7 @@ class AlarmReceiver : BroadcastReceiver() {
         val title = intent.getStringExtra("title") ?: "Бортжурнал"
         val text = intent.getStringExtra("text") ?: ""
         val id = intent.getIntExtra("nid", 1)
-        Notifier.show(context, id, title, text)
+        val action = intent.getStringExtra("action")?.takeIf { it.isNotEmpty() }
+        Notifier.show(context, id, title, text, action)
     }
 }

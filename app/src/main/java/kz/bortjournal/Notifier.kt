@@ -22,11 +22,14 @@ object Notifier {
     }
 
     @SuppressLint("MissingPermission")
-    fun show(ctx: Context, id: Int, title: String, text: String) {
+    fun show(ctx: Context, id: Int, title: String, text: String, action: String? = null) {
         ensureChannel(ctx)
+        val intent = Intent(ctx, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        if (action != null) intent.putExtra("action", action)
         val open = PendingIntent.getActivity(
-            ctx, 0,
-            Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            ctx, if (action != null) 7000 + (action.hashCode() and 0xFFF) else 0,
+            intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val n = NotificationCompat.Builder(ctx, CHANNEL)

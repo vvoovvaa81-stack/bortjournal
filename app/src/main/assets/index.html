@@ -181,6 +181,7 @@ nav.tabs button[aria-current="page"]{color:var(--accent)}
 <button class="fab" id="fab" aria-label="Добавить событие" aria-expanded="false" data-act="fab"></button>
 <div id="layer"></div>
 <input type="file" id="importFile" accept=".json,application/json" hidden>
+<input type="file" id="mergeFile" accept=".json,application/json" hidden>
 
 <script>
 (function(){
@@ -273,7 +274,7 @@ const REG_TEMPLATE=[
  ['Топливный фильтр','filter',60000,null]
 ];
 
-let S={cars:[],car:null,regs:[],rems:[],events:[],settings:{warnKm:1000,warnDays:30}};
+let S={cars:[],car:null,regs:[],rems:[],events:[],settings:{warnKm:1000,warnDays:30,odoMonthly:true}};
 let UI={tab:'home',toSeg:'regs',hType:'all',hq:'',statRange:'12'};
 
 const car=()=>S.cars.find(c=>c.id===S.car)||S.cars[0]||null;
@@ -324,6 +325,15 @@ function fuelStats(list){
     if(e.fuel.full){
       if(lastFull&&!broken&&e.odo>lastFull.odo){const dist=e.odo-lastFull.odo;pts.push({date:e.date,odo:e.odo,l100:acc/dist*100,dist})}
       lastFull=e;acc=0;broken=false;
+    }
+  }
+  if(pts.length<2){
+    // нет пары «полных баков»: считаем по отрезкам ~1500 км из всех заправок
+    const g=f.filter(e=>e.odo);pts.length=0;let start=null,acc=0;
+    for(const e of g){
+      if(!start){start=e;acc=0;continue}
+      acc+=e.fuel.liters||0;const dist=e.odo-start.odo;
+      if(dist>=1500){const v=acc/dist*100;if(v>3&&v<25)pts.push({date:e.date,odo:e.odo,l100:v,dist,approx:true});start=e;acc=0}
     }
   }
   const totalDist=pts.reduce((s,p)=>s+p.dist,0);
@@ -419,6 +429,12 @@ function scheduleNative(){
     }
   }
   S.car=keep;
+  if(S.settings.odoMonthly!==false&&S.cars.length){
+    let last=null;for(const c of S.cars){S.car=c.id;const p=odoPoints();if(p.length){const d=p[p.length-1][0];if(!last||d>last)last=d}}S.car=keep;
+    const at=new Date(pd(addDays(last||today(),30)));at.setHours(20,0,0,0);
+    const tm=new Date();tm.setDate(tm.getDate()+1);tm.setHours(20,0,0,0);
+    list.push({id:'odo',at:Math.max(at.getTime(),tm.getTime()),title:'Бортжурнал',text:'Какой сейчас пробег? Нажмите, чтобы внести',action:'odo'});
+  }
   if(alertsNow){const t=new Date();t.setDate(t.getDate()+1);t.setHours(9,0,0,0);list.push({id:'sum',at:t.getTime(),title:'Бортжурнал',text:'Требует внимания: '+alertsNow+' '+plural(alertsNow,'пункт','пункта','пунктов')})}
   const out=list.filter(x=>x.at>now).sort((a,b)=>a.at-b.at).slice(0,60);
   try{window.Android.schedule(JSON.stringify(out))}catch(e){}
@@ -471,7 +487,7 @@ function viewOnboard(){
 }
 
 function evTitle(e){
-  if(e.type==='fuel'&&e.fuel)return `${e.fuel.grade||'Топливо'} · ${nf2.format(e.fuel.liters||0)} л${e.fuel.full?' · полный':''}`;
+  if(e.type==='fuel'&&e.fuel)return `${e.fuel.grade||'Топливо'}${e.fuel.liters?' · '+nf2.format(e.fuel.liters)+' л':''}${e.fuel.full?' · полный':''}`;
   if(e.type==='other')return e.title||e.sub||'Другое';
   return e.title||TYPES[e.type].l;
 }
@@ -503,7 +519,7 @@ function viewHome(){
   return `<section class="dash" aria-label="Приборная панель">
     <div class="gauges">
       <div class="gauge">${gauge(cpk==null?null:Math.min(1,cpk/150))}<div class="g-val num">${cpk==null?'—':nf1.format(cpk)}</div><div class="g-lbl">₸ / км</div></div>
-      <div class="gauge big">${gauge(avgMonth?month/(avgMonth*1.5):(month?0.5:null),true)}<div class="g-val num">${nf.format(month)}</div><div class="g-cap">₸ в ${MONTHS[new Date().getMonth()].replace(/ь$/,'е').replace(/й$/,'е').replace(/т$/,'те')}</div><div class="g-lbl">Затраты</div></div>
+      <div class="gauge big">${gauge(avgMonth?month/(avgMonth*1.5):(month?0.5:null),true)}<div class="g-val num" style="${month>=100000?'font-size:24px':''}">${nf.format(month)}</div><div class="g-cap">₸ в ${MONTHS[new Date().getMonth()].replace(/ь$/,'е').replace(/й$/,'е').replace(/т$/,'те')}</div><div class="g-lbl">Затраты</div></div>
       <div class="gauge">${gauge(fs.avg==null?null:Math.min(1,fs.avg/16))}<div class="g-val num">${fs.avg==null?'—':nf1.format(fs.avg)}</div><div class="g-lbl">л / 100 км</div></div>
     </div>
     <div class="odo"><span class="odo-digits" aria-label="Пробег">${String(Math.round(curOdo())).padStart(6,'0')}</span><span class="muted" style="font-size:13px">км${kpd?`<br>${nf.format(kpd*30)} км/мес`:''}</span><button class="btn sm" data-act="odo">${ico('edit')} Пробег</button></div>
@@ -580,24 +596,26 @@ function viewStats(){
   const cpk=costPerKm(E);const fs=fuelStats(all);const fsR=fuelStats(E);
   const kpd=kmPerDay();
   // monthly bars (last 12 months)
-  const months=[];const d0=new Date();d0.setDate(1);
-  for(let i=11;i>=0;i--){const d=new Date(d0.getFullYear(),d0.getMonth()-i,1);months.push(`${d.getFullYear()}-${pad2(d.getMonth()+1)}`)}
-  const mv=months.map(m=>all.filter(e=>e.date.slice(0,7)===m).reduce((s,e)=>s+(e.cost||0),0));
-  const mfuel=months.map(m=>all.filter(e=>e.date.slice(0,7)===m&&e.type==='fuel').reduce((s,e)=>s+(e.cost||0),0));
-  const mx=Math.max(1,...mv);
-  const W=340,H=150,L=40,B=20,T=10,bw=(W-L-6)/12;
+  const byYear=range==='all';let months=[];
+  if(byYear){const ys=all.map(e=>+e.date.slice(0,4));const y0=Math.min(...ys,new Date().getFullYear()),y1=new Date().getFullYear();for(let y=Math.max(y0,y1-15);y<=y1;y++)months.push(String(y))}
+  else{const d0=new Date();d0.setDate(1);for(let i=11;i>=0;i--){const d=new Date(d0.getFullYear(),d0.getMonth()-i,1);months.push(`${d.getFullYear()}-${pad2(d.getMonth()+1)}`)}}
+  const kl=byYear?4:7;
+  const mv=months.map(m=>all.filter(e=>e.date.slice(0,kl)===m).reduce((s,e)=>s+(e.cost||0),0));
+  const mfuel=months.map(m=>all.filter(e=>e.date.slice(0,kl)===m&&e.type==='fuel').reduce((s,e)=>s+(e.cost||0),0));
+  const mx=Math.max(1,...mv);const NB=months.length;
+  const W=340,H=150,L=40,B=20,T=10,bw=(W-L-6)/NB;
   const nice=v=>{const p=Math.pow(10,Math.floor(Math.log10(v)));const n=v/p;return (n<=1?1:n<=2?2:n<=5?5:10)*p};
   const top=nice(mx);const y=v=>T+(H-T-B)*(1-v/top);
   let bars=`<line x1="${L}" x2="${W}" y1="${y(0)}" y2="${y(0)}" stroke="var(--line)"/>`;
   for(const g of [0.5,1]){bars+=`<line x1="${L}" x2="${W}" y1="${y(top*g)}" y2="${y(top*g)}" stroke="var(--line)" stroke-dasharray="2 3"/><text x="${L-4}" y="${y(top*g)+3}" text-anchor="end">${top*g>=1000?nf.format(top*g/1000)+'k':nf.format(top*g)}</text>`}
   months.forEach((m,i)=>{const x=L+4+i*bw;const h1=y(0)-y(mv[i]);const h2=y(0)-y(mfuel[i]);
-    bars+=`<rect x="${x.toFixed(1)}" y="${y(mv[i]).toFixed(1)}" width="${(bw-4).toFixed(1)}" height="${h1.toFixed(1)}" rx="2" fill="color-mix(in srgb,var(--accent) 45%,transparent)"><title>${MONTHS[+m.slice(5)-1]}: ${money(mv[i])}</title></rect><rect x="${x.toFixed(1)}" y="${y(mfuel[i]).toFixed(1)}" width="${(bw-4).toFixed(1)}" height="${h2.toFixed(1)}" rx="2" fill="var(--accent)"/>`;
-    if(i%2===1||i===11)bars+=`<text x="${(x+(bw-4)/2).toFixed(1)}" y="${H-5}" text-anchor="middle">${MON_S[+m.slice(5)-1]}</text>`});
+    bars+=`<rect x="${x.toFixed(1)}" y="${y(mv[i]).toFixed(1)}" width="${(bw-4).toFixed(1)}" height="${h1.toFixed(1)}" rx="2" fill="color-mix(in srgb,var(--accent) 45%,transparent)"><title>${byYear?m:MONTHS[+m.slice(5)-1]}: ${money(mv[i])}</title></rect><rect x="${x.toFixed(1)}" y="${y(mfuel[i]).toFixed(1)}" width="${(bw-4).toFixed(1)}" height="${h2.toFixed(1)}" rx="2" fill="var(--accent)"/>`;
+    if(byYear?((NB-1-i)%(NB>8?3:1)===0):(i%2===1||i===11))bars+=`<text x="${(x+(bw-4)/2).toFixed(1)}" y="${H-5}" text-anchor="middle">${byYear?(NB>8?"'"+m.slice(2):m):MON_S[+m.slice(5)-1]}</text>`});
   // categories
   const cats={};for(const e of E){const k=e.type==='other'?(e.sub||'Другое'):TYPES[e.type].l;cats[k]=(cats[k]||0)+(e.cost||0)}
   const catArr=Object.entries(cats).sort((a,b)=>b[1]-a[1]);const cmax=Math.max(1,...catArr.map(c=>c[1]));
   // consumption chart
-  const pts=fs.pts.slice(-20);let cons='';
+  const pts=fs.pts.slice(-30);let cons='';
   if(pts.length>=2){const cw=340,ch=120,cl=30,cb=16,ct=10;const vals=pts.map(p=>p.l100);let lo=Math.floor(Math.min(...vals)-1),hi=Math.ceil(Math.max(...vals)+1);
     const xs=i=>cl+(cw-cl-8)*i/(pts.length-1);const ys=v=>ct+(ch-ct-cb)*(1-(v-lo)/(hi-lo));
     const line=pts.map((p,i)=>`${i?'L':'M'}${xs(i).toFixed(1)} ${ys(p.l100).toFixed(1)}`).join('');
@@ -611,9 +629,9 @@ function viewStats(){
    <div class="card tile"><span>Средний расход</span><b class="num">${(fsR.avg??fs.avg)==null?'—':nf1.format(fsR.avg??fs.avg)+' л'}</b><small>на 100 км, от полного до полного</small></div>
    <div class="card tile"><span>Пробег</span><b class="num">${kpd?nf.format(kpd*30)+' км':'—'}</b><small>в месяц в среднем</small></div>
   </div>
-  <section class="card pad"><div class="sec-h" style="margin:0 0 6px"><h2>Расходы по месяцам</h2><span class="muted" style="font-size:12px"><span style="color:var(--accent)">■</span> топливо ■ остальное</span></div><svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Расходы по месяцам">${bars}</svg></section>
+  <section class="card pad"><div class="sec-h" style="margin:0 0 6px"><h2>Расходы по ${byYear?'годам':'месяцам'}</h2><span class="muted" style="font-size:12px"><span style="color:var(--accent)">■</span> топливо ■ остальное</span></div><svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Расходы по месяцам">${bars}</svg></section>
   <section class="card pad"><div class="sec-h" style="margin:0 0 4px"><h2>На что уходят деньги</h2></div>${catArr.length?catArr.map(([k,v])=>`<div class="hbar"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(k)}</span><span class="track"><i style="width:${(v/cmax*100).toFixed(1)}%"></i></span><span class="num" style="font-size:15px">${money(v)}</span></div>`).join(''):'<p class="muted">Нет данных за период.</p>'}</section>
-  <section class="card pad"><div class="sec-h" style="margin:0 0 6px"><h2>Расход топлива, л/100 км</h2></div>${cons||'<p class="muted" style="margin:0">Нужно минимум три заправки «до полного бака», чтобы построить график.</p>'}</section>`;
+  <section class="card pad"><div class="sec-h" style="margin:0 0 6px"><h2>Расход топлива, л/100 км</h2></div>${cons||'<p class="muted" style="margin:0">Пока мало заправок, чтобы построить график.</p>'}${fs.pts.length&&fs.pts[0].approx?'<p class="muted" style="margin:6px 0 0;font-size:12px">Без отметок «полный бак» расход оценивается по отрезкам примерно 1500 км.</p>':''}</section>`;
 }
 
 /* ---------- sheets ---------- */
@@ -635,12 +653,14 @@ function evForm(type,ev){
   if(type==='fuel'){
     const f=e.fuel||{grade:(c&&c.grade)||'АИ-95',liters:'',price:'',full:true,missed:false};
     body+=`<div class="f"><label>Топливо</label><div class="grades" id="f_grades">${GRADES.map(g=>`<button type="button" data-act="grade" data-v="${g}" aria-pressed="${f.grade===g}">${g}</button>`).join('')}</div></div>
-     ${fld('f_place','АЗС','list="azs" placeholder="Helios, Sinooil, Gazprom…"',e.place||'')}
-     <datalist id="azs">${[...new Set(['Helios','Sinooil','Qazaq Oil','Gazprom','Petrol Express','Royal Petrol','КазМунайГаз',...S.events.filter(x=>x.type==='fuel'&&x.place).map(x=>x.place)])].map(x=>`<option value="${esc(x)}">`).join('')}</datalist>
-     <div class="row3">${fld('f_l','Литров','type="number" inputmode="decimal" step="0.01" min="0"',f.liters??'')}${fld('f_p','Цена за литр','type="number" inputmode="decimal" step="0.01" min="0"',f.price??'')}${fld('f_cost','Сумма, ₸','type="number" inputmode="decimal" min="0"',e.cost??'')}</div>
+     <div class="row">${fld('f_cost','Сумма, ₸','type="number" inputmode="decimal" min="0"',e.cost??'')}${fld('f_l','Литров (можно пропустить)','type="number" inputmode="decimal" step="0.01" min="0"',f.liters??'')}</div>
      <label class="check"><input type="checkbox" id="f_full" ${f.full?'checked':''}> Полный бак</label>
-     <label class="check"><input type="checkbox" id="f_missed" ${f.missed?'checked':''}> Пропустил прошлую заправку (расход считать заново)</label>
-     <p class="note" style="margin:0">Расход считается между двумя заправками «до полного». Любые два поля из «литры / цена / сумма» заполняют третье.</p>`;
+     <details ${e.place||f.missed?'open':''}><summary class="muted" style="cursor:pointer;font-size:14px;padding:4px 0">Ещё: АЗС, цена за литр</summary><div class="form" style="padding-block:8px 0">
+     ${fld('f_place','АЗС','list="azs" placeholder="Helios, Sinooil, КазМунайГаз…"',e.place||'')}
+     <datalist id="azs">${[...new Set(['Helios','Sinooil','Qazaq Oil','Gazprom','Petrol Express','Royal Petrol','КазМунайГаз',...S.events.filter(x=>x.type==='fuel'&&x.place).map(x=>x.place)])].map(x=>`<option value="${esc(x)}">`).join('')}</datalist>
+     ${fld('f_p','Цена за литр','type="number" inputmode="decimal" step="0.01" min="0"',f.price??'')}
+     <label class="check"><input type="checkbox" id="f_missed" ${f.missed?'checked':''}> Пропустил прошлую заправку (расход считать заново)</label></div></details>
+     <p class="note" style="margin:0">Достаточно суммы и пробега. Литры нужны только для расчёта расхода.</p>`;
   }else if(type==='service'||type==='repair'||type==='tuning'){
     const parts=e.parts&&e.parts.length?e.parts:[{name:'',price:''}];
     body+=fld('f_title','Что делали',`placeholder="${type==='service'?'Замена масла и фильтров':type==='repair'?'Замена задних колодок':'Покупка дисков'}" list="titles"`,e.title||'')+
@@ -679,8 +699,8 @@ function saveEvent(type,ev){
   if(type==='fuel'){
     let l=num(val('f_l')),p=num(val('f_p')),c=num(val('f_cost'));
     if(l&&p&&!c)c=l*p; if(l&&c&&!p)p=c/l; if(p&&c&&!l)l=c/p;
-    if(!l||!c){toast('Укажите литры и сумму (или цену за литр)');return}
-    e.cost=Math.round(c);e.fuel={grade:$('#layer')._grade,liters:+l.toFixed(2),price:p?+p.toFixed(2):null,full:$('#f_full').checked,missed:$('#f_missed').checked};
+    if(!c){toast('Укажите сумму');return}
+    e.cost=Math.round(c);e.fuel={grade:$('#layer')._grade,liters:l?+l.toFixed(2):0,price:p?+p.toFixed(2):null,full:$('#f_full').checked,missed:$('#f_missed').checked};
     const cc=car();if(cc&&cc.grade!==e.fuel.grade){cc.grade=e.fuel.grade;saveGarage()}
   }else if(type==='service'||type==='repair'||type==='tuning'){
     e.title=val('f_title');
@@ -766,6 +786,52 @@ function odoForm(){
       const fired=o>prev?alertsList().filter(a=>a.s.kmLeft!=null):[];toast(fired.length?`Внимание: ${fired[0].r.title}`:'Пробег обновлён')}
   });
 }
+function autoBackupBlock(){
+  let info=null;try{const t=window.Android.autoBackupInfo&&window.Android.autoBackupInfo();if(t)info=JSON.parse(t)}catch(e){}
+  if(!window.Android.setupAutoBackup)return '';
+  return info&&info.name?`<div class="note" style="margin:0"><b style="color:var(--fg)">Автокопия включена:</b> ${esc(info.name)}${info.last?'<br>последняя: '+esc(new Date(info.last).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})):''}${info.error?'<br><span style="color:var(--bad)">Ошибка записи: '+esc(info.error)+'</span>':''}<div class="acts" style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" data-act="abnow">Сохранить сейчас</button><button class="btn sm" data-act="aboff">Отключить</button></div></div>`
+   :`<button class="btn" data-act="absetup">${ico('down')} Включить автокопию (Google Диск или папка)</button><p class="muted" style="margin:-4px 0 0;font-size:12px">Один раз выберите, где хранить файл. Дальше копия обновляется сама после каждого изменения.</p>`;
+}
+function previewMerge(o){
+  const c=car();if(!c){toast('Сначала добавьте автомобиль');return}
+  let list=[];
+  if(o.kind==='import'&&Array.isArray(o.events))list=o.events;
+  else if(Array.isArray(o.events)&&Array.isArray(o.cars)){const src=o.cars.find(x=>x.name===c.name)||o.cars[0];list=src?o.events.filter(e=>e.car===src.id):[]}
+  else{toast('Это не файл Бортжурнала');return}
+  const mine=evs();const ids=new Set(mine.map(e=>e.importId).filter(Boolean));
+  const sig=e=>[e.type,e.date,Math.round(e.cost||0),e.odo||''].join('|');const sigs=new Set(mine.map(sig));
+  const fresh=list.filter(e=>e&&e.date&&TYPES[e.type]&&!(e.importId&&ids.has(e.importId))&&!sigs.has(sig(e)));
+  const dup=list.length-fresh.length;
+  const byT={};for(const e of fresh)byT[e.type]=(byT[e.type]||0)+1;
+  const ys=fresh.map(e=>e.date.slice(0,4)).sort();
+  const sum=fresh.reduce((s,e)=>s+(e.cost||0),0);
+  $('#layer')._merge={o,fresh};
+  openSheet('Добавить записи',`<div class="form">${o.title?`<p style="margin:0"><b>${esc(o.title)}</b></p>`:''}
+   <div class="card pad" style="display:grid;gap:6px">
+    <div>Новых записей: <b class="num" style="font-size:20px">${fresh.length}</b>${ys.length?` <span class="muted">(${ys[0]}–${ys[ys.length-1]})</span>`:''}</div>
+    ${fresh.length?`<div class="muted" style="font-size:13px">${Object.entries(byT).map(([k,n])=>TYPES[k].l+': '+n).join(' · ')}</div><div class="muted" style="font-size:13px">На сумму ${money(sum)}</div>`:''}
+    ${dup?`<div class="muted" style="font-size:13px">Уже есть в журнале, пропущу: ${dup}</div>`:''}
+   </div>
+   ${o.car&&Object.keys(o.car).some(k=>o.car[k]&&!c[k])?`<p class="note" style="margin:0">Заполню пустые поля машины: ${Object.keys(o.car).filter(k=>o.car[k]&&!c[k]).map(k=>({year:'год',engine:'двигатель',plate:'госномер',vin:'VIN',name:'название'})[k]||k).join(', ')}.</p>`:''}
+   <div style="display:flex;gap:8px"><button class="btn pri" data-act="mergeyes" ${fresh.length?'':'disabled'}>${ico('check')} Добавить ${fresh.length}</button><button class="btn" data-act="close">Отмена</button></div></div>`);
+}
+function applyMerge(){
+  const m=$('#layer')._merge;if(!m)return;const c=car();const years=new Set();let regHits=0;
+  for(const src of m.fresh){
+    const e=JSON.parse(JSON.stringify(src));const titles=e.regsDoneTitles||[];delete e.regsDoneTitles;
+    e.id=uid();e.car=c.id;if(e.odo==null||e.odo==='')e.odo=null;e.cost=Math.round(e.cost||0);
+    if(e.type==='fuel'&&!e.fuel)e.fuel={grade:'АИ-95',liters:0,price:null,full:false,missed:false};
+    S.events.push(e);years.add(e.date.slice(0,4));
+    if(titles.length){const odo=e.odo??(daysBetween(e.date,today())<=14?curOdo():null);
+      for(const r of S.regs.filter(r=>r.car===c.id&&titles.some(t=>r.title.toLowerCase().includes(t.toLowerCase())))){
+        if(!r.lastDate||e.date>=r.lastDate){r.lastDate=e.date;if(odo!=null)r.lastOdo=odo;regHits++;(e.regsDone=e.regsDone||[]).push(r.id)}}}
+  }
+  if(m.o.car)for(const k of ['year','engine','plate','vin'])if(m.o.car[k]&&!c[k])c[k]=m.o.car[k];
+  saveGarage();saveYears(...years);closeSheet();UI.tab='hist';render();
+  toast(`Добавлено записей: ${m.fresh.length}${regHits?`, отмечено в графике ТО: ${regHits}`:''}`);
+}
+window.__action=function(a){if(a==='odo'&&car())odoForm()};
+
 function notifSheet(){
   const al=alertsList();
   const upcoming=regs().map(r=>({r,s:regStatus(r),d:regDueDate(r)})).filter(x=>x.d&&x.s.state==='ok').sort((a,b)=>a.d.localeCompare(b.d)).slice(0,5);
@@ -785,7 +851,12 @@ function settingsSheet(){
    <div class="sec-h"><h2>Данные</h2></div>
    <p class="note" style="margin:0">${store==='device'?'Записи хранятся в памяти телефона. Делайте резервную копию раз в пару месяцев: при удалении приложения данные пропадут. Сюда же можно восстановить копию из веб-версии.':store==='cloud'?'Записи хранятся в вашем аккаунте Claude: открываются с телефона и компьютера, видны только вам.':'Облачное хранилище недоступно в этом окне, записи сохраняются только в этом браузере. Сделайте резервную копию.'}</p>
    ${NATIVE?`<button class="btn" data-act="testnotif">${ico('bell')} Проверить уведомление</button>`:''}
-   <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="export">${ico('down')} Резервная копия</button><button class="btn" data-act="import">${ico('up')} Восстановить из файла</button><button class="btn" data-act="ics">${ico('cal')} Сроки в календарь</button></div>
+   ${NATIVE?autoBackupBlock():''}
+   ${NATIVE?`<label class="check"><input type="checkbox" id="s_odom" ${S.settings.odoMonthly!==false?'checked':''}> Раз в месяц спрашивать пробег (уведомление в 20:00)</label>`:''}
+   <button class="btn pri" data-act="merge">${ico('plus')} Добавить записи из файла</button>
+   <p class="muted" style="margin:-4px 0 0;font-size:12px">Дописывает записи (историю, разобранные счета) к текущей машине, ничего не удаляя. Повторный импорт того же файла дублей не создаёт.</p>
+   <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="export">${ico('down')} Резервная копия</button><button class="btn" data-act="import">${ico('up')} Восстановить из копии</button><button class="btn" data-act="ics">${ico('cal')} Сроки в календарь</button></div>
+   <p class="muted" style="margin:-4px 0 0;font-size:12px">«Восстановить из копии» заменяет все данные содержимым файла.</p>
    <p class="store">${S.events.length} ${plural(S.events.length,'событие','события','событий')} · ${S.regs.length} работ ТО · ${S.rems.length} напоминаний</p></div>`);
 }
 
@@ -842,6 +913,11 @@ document.addEventListener('click',ev=>{
     case 'savesettings':S.settings.warnKm=num(val('s_km'))??1000;S.settings.warnDays=num(val('s_d'))??30;saveGarage();render();toast('Пороги применены');break;
     case 'export':saveFile(`bortjournal-${today()}.json`,JSON.stringify({app:'bortjournal',v:1,exported:new Date().toISOString(),...S},null,1),'Резервная копия сохранена');break;
     case 'import':$('#importFile').click();break;
+    case 'merge':$('#mergeFile').click();break;
+    case 'mergeyes':applyMerge();break;
+    case 'absetup':try{window.Android.setupAutoBackup()}catch(e){}break;
+    case 'aboff':try{window.Android.disableAutoBackup();settingsSheet();toast('Автокопия отключена')}catch(e){}break;
+    case 'abnow':try{window.Android.autoBackupNow(JSON.stringify(S));setTimeout(settingsSheet,1500)}catch(e){}break;
     case 'ics':{if(!car())break;const r=buildIcs();if(!r.n){toast('Нет сроков: настройте график ТО или напоминания с датой');break}saveFile('bortjournal-calendar.ics',r.text,`В файле ${r.n} событий. Откройте его на телефоне, чтобы добавить в календарь`);break}
     case 'testnotif':try{window.Android.testNotify();toast('Отправлено. Если не пришло, разрешите уведомления для приложения.')}catch(e){}break;
     case 'close':closeSheet();break;
@@ -865,10 +941,16 @@ document.addEventListener('input',ev=>{
   if(t.id==='f_cost'){const l=num(val('f_l')),c=num(val('f_cost'));if(l&&c&&!num(val('f_p')))$('#f_p').value=(c/l).toFixed(1)}
 });
 document.addEventListener('keydown',ev=>{if(ev.key==='Escape'){if($('#layer').innerHTML)closeSheet();else closeDial()}});
+document.addEventListener('change',ev=>{if(ev.target.id==='s_odom'){S.settings.odoMonthly=ev.target.checked;saveGarage();toast(ev.target.checked?'Буду спрашивать пробег раз в месяц':'Не буду спрашивать пробег')}});
+$('#mergeFile').addEventListener('change',async ev=>{
+  const f=ev.target.files[0];ev.target.value='';if(!f)return;
+  try{previewMerge(JSON.parse(await f.text()))}catch(e){toast('Не удалось прочитать файл')}
+});
+window.__autoBackupChanged=function(){if($('#layer').innerHTML.includes('Настройки'))settingsSheet()};
 $('#importFile').addEventListener('change',async ev=>{
   const f=ev.target.files[0];ev.target.value='';if(!f)return;
   try{const o=JSON.parse(await f.text());if(!o||!Array.isArray(o.cars)||!Array.isArray(o.events))throw 0;
-    S={cars:o.cars,car:o.car||o.cars[0]?.id||null,regs:o.regs||[],rems:o.rems||[],events:o.events,settings:Object.assign({warnKm:1000,warnDays:30},o.settings||{})};
+    S={cars:o.cars,car:o.car||o.cars[0]?.id||null,regs:o.regs||[],rems:o.rems||[],events:o.events,settings:Object.assign({warnKm:1000,warnDays:30,odoMonthly:true},o.settings||{})};
     saveAll();closeSheet();render();toast(`Восстановлено: ${S.events.length} событий`)}
   catch(e){toast('Это не файл резервной копии Бортжурнала')}
 });

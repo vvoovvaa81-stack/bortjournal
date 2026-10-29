@@ -46,6 +46,30 @@ class MainActivity : ComponentActivity() {
 
     private val askNotif = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
+    private var pendingAction: String? = null
+    private var pageReady = false
+
+    private val pickBackup = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) {
+            AutoBackup.setUri(this, uri)
+            AutoBackup.schedule(this, Storage.load(this), 0)
+            Toast.makeText(this, "Автокопия включена", Toast.LENGTH_SHORT).show()
+            web.postDelayed({ web.evaluateJavascript("window.__autoBackupChanged && window.__autoBackupChanged()", null) }, 1200)
+        }
+    }
+
+    private fun runPendingAction() {
+        val a = pendingAction ?: return
+        if (!pageReady) return
+        pendingAction = null
+        web.evaluateJavascript("window.__action && window.__action(" + org.json.JSONObject.quote(a) + ")", null)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        intent.getStringExtra("action")?.let { pendingAction = it; runPendingAction() }
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -59,7 +83,13 @@ class MainActivity : ComponentActivity() {
         web.settings.textZoom = 100
         web.addJavascriptInterface(Bridge(), "Android")
 
+        pendingAction = intent?.getStringExtra("action")
         web.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView, url: String) {
+                pageReady = true
+                view.postDelayed({ runPendingAction() }, 300)
+            }
+
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val url = request.url
                 if (url.scheme == "file") return false
@@ -118,7 +148,30 @@ class MainActivity : ComponentActivity() {
         fun load(): String = Storage.load(this@MainActivity)
 
         @JavascriptInterface
-        fun save(json: String) = Storage.save(this@MainActivity, json)
+        fun save(json: String) {
+            Storage.save(this@MainActivity, json)
+            AutoBackup.schedule(this@MainActivity, json)
+        }
+
+        @JavascriptInterface
+        fun autoBackupInfo(): String = AutoBackup.info(this@MainActivity)
+
+        @JavascriptInterface
+        fun setupAutoBackup() {
+            runOnUiThread {
+                try {
+                    pickBackup.launch("bortjournal-autobackup.json")
+                } catch (e: Exception) {
+                    Toast.makeText(this@MainActivity, "Не удалось открыть выбор места", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun disableAutoBackup() = AutoBackup.disable(this@MainActivity)
+
+        @JavascriptInterface
+        fun autoBackupNow(json: String) = AutoBackup.schedule(this@MainActivity, json, 0)
 
         @JavascriptInterface
         fun schedule(json: String) = Scheduler.replaceAll(this@MainActivity, json)
