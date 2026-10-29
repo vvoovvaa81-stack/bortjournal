@@ -510,7 +510,9 @@ function viewHome(){
   const prev12=E.filter(e=>daysBetween(e.date,t)<=365);
   const avgMonth=prev12.length?prev12.reduce((s,e)=>s+(e.cost||0),0)/12:0;
   const fs=fuelStats(E);const cpk=costPerKm(E);
-  const R=regs();const lamps=R.slice(0,10);
+  const R=regs();const LO={bad:0,warn:1,ok:2,unset:3};
+  const sortedR=R.map((r,i)=>({r,i,st:regStatus(r).state})).sort((a,b)=>LO[a.st]-LO[b.st]||a.i-b.i).map(x=>x.r);
+  const lamps=R.length>10?sortedR.slice(0,9):sortedR;const moreN=R.length-lamps.length;
   const al=alertsList();
   const last=[...E].sort((a,b)=>b.date.localeCompare(a.date)||(b.odo||0)-(a.odo||0)).slice(0,3);
   const kpd=kmPerDay();
@@ -521,7 +523,7 @@ function viewHome(){
       <div class="gauge">${gauge(fs.avg==null?null:Math.min(1,fs.avg/16))}<div class="g-val num">${fs.avg==null?'—':nf1.format(fs.avg)}</div><div class="g-lbl">л / 100 км</div></div>
     </div>
     <div class="odo"><span class="odo-digits" aria-label="Пробег">${String(Math.round(curOdo())).padStart(6,'0')}</span><span class="muted" style="font-size:13px">км${kpd?`<br>${nf.format(kpd*30)} км/мес`:''}</span><button class="btn sm" data-act="odo">${ico('edit')} Пробег</button></div>
-    ${lamps.length?`<div class="lamps" aria-label="Индикаторы ТО">${lamps.map(r=>{const s=regStatus(r);return `<button class="lamp ${s.state}" data-act="regedit" data-id="${r.id}" title="${esc(r.title)}" aria-label="${esc(r.title)}">${ico(r.icon||'wrench')}</button>`}).join('')}</div>`:''}
+    ${lamps.length?`<div class="lamps" aria-label="Индикаторы ТО">${lamps.map(r=>{const s=regStatus(r);return `<button class="lamp ${s.state}" data-act="regedit" data-id="${r.id}" title="${esc(r.title)}" aria-label="${esc(r.title)}">${ico(r.icon||'wrench')}</button>`}).join('')}${moreN?`<button class="lamp" data-act="tab" data-v="to" aria-label="Ещё ${moreN}" style="opacity:.8;font:600 16px var(--display)">+${moreN}</button>`:''}</div>`:''}
   </section>
   ${al.length?`<div class="sec-h"><h2>Требует внимания</h2></div><div class="card">${al.map(alertRow).join('')}</div>`:
    (R.length&&R.every(r=>regStatus(r).state==='unset')?`<div class="card pad note"><b style="color:var(--fg)">График ТО не настроен.</b> Индикаторы с пунктиром ждут даты и пробега последней замены. Откройте вкладку «ТО» и заполните хотя бы масло.</div>`:
