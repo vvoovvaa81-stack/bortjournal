@@ -805,16 +805,19 @@ function previewMerge(o){
   const byT={};for(const e of fresh)byT[e.type]=(byT[e.type]||0)+1;
   const ys=fresh.map(e=>e.date.slice(0,4)).sort();
   const sum=fresh.reduce((s,e)=>s+(e.cost||0),0);
-  $('#layer')._merge={o,fresh,odoNew};
+  const regPlan=(Array.isArray(o.regs)?o.regs:[]).map(r=>{const ex=regs().find(x=>x.title.toLowerCase().includes((r.match||r.title).toLowerCase()));
+    const skip=ex&&ex.lastDate&&r.lastDate&&ex.lastDate>r.lastDate;return {r,ex,skip}}).filter(x=>!x.skip);
+  $('#layer')._merge={o,fresh,odoNew,regPlan};
   openSheet('Добавить записи',`<div class="form">${o.title?`<p style="margin:0"><b>${esc(o.title)}</b></p>`:''}
    <div class="card pad" style="display:grid;gap:6px">
     <div>Новых записей: <b class="num" style="font-size:20px">${fresh.length}</b>${ys.length?` <span class="muted">(${ys[0]===ys[ys.length-1]?ys[0]:ys[0]+'–'+ys[ys.length-1]})</span>`:''}</div>
     ${fresh.length?`<div class="muted" style="font-size:13px">${Object.entries(byT).map(([k,n])=>TYPES[k].l+': '+n).join(' · ')}</div><div class="muted" style="font-size:13px">На сумму ${money(sum)}</div>`:''}
     ${odoNew.length?`<div class="muted" style="font-size:13px">Точек пробега: ${odoNew.length}</div>`:''}
+    ${regPlan.length?`<div class="muted" style="font-size:13px">График ТО: ${regPlan.map(x=>esc(x.r.title)+(x.ex?'':' (новая)')).join(', ')}</div>`:''}
     ${dup?`<div class="muted" style="font-size:13px">Уже есть в журнале, пропущу: ${dup}</div>`:''}
    </div>
    ${o.car&&Object.keys(o.car).some(k=>o.car[k]&&!c[k])?`<p class="note" style="margin:0">Заполню пустые поля машины: ${Object.keys(o.car).filter(k=>o.car[k]&&!c[k]).map(k=>({year:'год',engine:'двигатель',plate:'госномер',vin:'VIN',name:'название'})[k]||k).join(', ')}.</p>`:''}
-   <div style="display:flex;gap:8px"><button class="btn pri" data-act="mergeyes" ${fresh.length||odoNew.length?'':'disabled'}>${ico('check')} Добавить ${fresh.length||''}${!fresh.length&&odoNew.length?'пробег':''}</button><button class="btn" data-act="close">Отмена</button></div></div>`);
+   <div style="display:flex;gap:8px"><button class="btn pri" data-act="mergeyes" ${fresh.length||odoNew.length||regPlan.length?'':'disabled'}>${ico('check')} ${fresh.length?'Добавить '+fresh.length:'Применить'}</button><button class="btn" data-act="close">Отмена</button></div></div>`);
 }
 function applyMerge(){
   const m=$('#layer')._merge;if(!m)return;const c=car();const years=new Set();let regHits=0;
@@ -828,6 +831,11 @@ function applyMerge(){
         if(!r.lastDate||e.date>=r.lastDate){r.lastDate=e.date;if(odo!=null)r.lastOdo=odo;regHits++;(e.regsDone=e.regsDone||[]).push(r.id)}}}
   }
   if(m.o.car)for(const k of ['year','engine','plate','vin'])if(m.o.car[k]&&!c[k])c[k]=m.o.car[k];
+  for(const {r,ex} of (m.regPlan||[])){
+    const t=ex||{id:uid(),car:c.id,icon:r.icon||'wrench'};
+    for(const k of ['title','icon','everyKm','everyMonths','lastDate','lastOdo','note'])if(r[k]!==undefined)t[k]=r[k];
+    if(!ex)S.regs.push(t);regHits++;
+  }
   if(m.odoNew&&m.odoNew.length){c.odoLog=(c.odoLog||[]).concat(m.odoNew.map(p=>({d:p.d,o:Math.round(p.o)}))).sort((a,b)=>a.d<b.d?-1:1);if(c.odoLog.length>300)c.odoLog=c.odoLog.slice(-300)}
   saveGarage();saveYears(...years);closeSheet();UI.tab='hist';render();
   toast(`Добавлено записей: ${m.fresh.length}${m.odoNew&&m.odoNew.length?`, точек пробега: ${m.odoNew.length}`:''}${regHits?`, отмечено в графике ТО: ${regHits}`:''}`);
