@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- background arc of the gauge -->
+    <path android:pathData="M35.4,72.6 A26,26 0 1,1 72.6,72.6"
+        android:strokeColor="#3A5072" android:strokeWidth="6" android:strokeLineCap="round" android:fillColor="#00000000"/>
+    <!-- filled part -->
+    <path android:pathData="M35.4,72.6 A26,26 0 0,1 54,28"
+        android:strokeColor="#F6B91A" android:strokeWidth="6" android:strokeLineCap="round" android:fillColor="#00000000"/>
+    <path android:pathData="M54,28 A26,26 0 0,1 72.6,35.4"
+        android:strokeColor="#F6B91A" android:strokeWidth="6" android:strokeLineCap="round" android:fillColor="#00000000"/>
+    <!-- needle -->
+    <path android:pathData="M54,56 L68,40" android:strokeColor="#E8EEF6" android:strokeWidth="4" android:strokeLineCap="round" android:fillColor="#00000000"/>
+    <path android:pathData="M54,56 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0" android:fillColor="#E8EEF6"/>
+    <!-- odometer -->
+    <path android:pathData="M44,66 h20 a2,2 0 0 1 2,2 v6 a2,2 0 0 1 -2,2 h-20 a2,2 0 0 1 -2,-2 v-6 a2,2 0 0 1 2,-2z" android:fillColor="#0E1828" android:strokeColor="#3A5072" android:strokeWidth="1.5"/>
+    <path android:pathData="M47,71 h3 M52.5,71 h3 M58,71 h3" android:strokeColor="#F6B91A" android:strokeWidth="2" android:strokeLineCap="round"/>
+</vector>
