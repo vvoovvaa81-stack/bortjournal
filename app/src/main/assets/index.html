@@ -99,7 +99,7 @@ main{display:flex;flex-direction:column;gap:14px;padding-block:14px}
 .search svg{width:18px;height:18px;color:var(--muted)}
 .search input{flex:1;min-width:0;border:0;background:none;padding:11px 0;outline:none}
 /* TO cards */
-.seg{display:grid;grid-template-columns:1fr 1fr;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:3px}
+.seg{display:grid;grid-template-columns:repeat(var(--segn,2),1fr);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:3px}
 .seg button{border:0;background:none;border-radius:9px;padding:9px;font-weight:600;color:var(--muted)}
 .seg button[aria-selected="true"]{background:var(--panel2);color:var(--fg);box-shadow:inset 0 -2px 0 var(--accent)}
 .reg{padding:14px;display:grid;grid-template-columns:52px 1fr;gap:12px}
@@ -113,6 +113,21 @@ main{display:flex;flex-direction:column;gap:14px;padding-block:14px}
 .kv div span{color:var(--muted);display:block;font-size:12px}
 .kv div b{font:600 17px/1.15 var(--display)}
 .reg .acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.stockhint{display:flex;gap:6px;align-items:flex-start;font-size:13px;color:var(--ok);margin-top:6px;line-height:1.35}
+.stockhint svg{width:16px;height:16px;flex:none;margin-top:1px}
+.stk{padding:12px 14px;display:grid;gap:4px}
+.stk .top{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.stk .top b{font-weight:600;min-width:0}
+.tags{display:flex;gap:6px;flex-wrap:wrap;font-size:12px;margin-top:2px}
+.tag{border:1px solid var(--line);border-radius:999px;padding:2px 8px;color:var(--muted)}
+.part2{display:grid;gap:4px;padding-bottom:8px;border-bottom:1px dashed var(--line)}
+.pmeta{display:grid;grid-template-columns:1fr 1fr auto;gap:6px;align-items:center}
+.pmeta input{width:100%;min-width:0;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:13px}
+.rate{display:flex;gap:2px}
+.rate button{border:1px solid transparent;background:none;border-radius:8px;padding:2px 4px;font-size:17px;line-height:1;opacity:.45}
+.rate button[aria-pressed="true"]{opacity:1;border-color:var(--line);background:var(--panel2)}
+.phint{font-size:12px;color:var(--muted);line-height:1.35}
+.phint b{color:var(--fg);font-weight:600}
 /* stats */
 .tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .tile{padding:12px 14px}
@@ -223,7 +238,9 @@ const P={
  down:'<path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>',
  up:'<path d="M12 21V9M7 14l5-5 5 5M5 3h14"/>',
  money:'<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>',
- clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'
+ clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+ box:'<path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/>',
+ snooze:'<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M5 3L2 6M19 3l3 3"/>'
 };
 const ico=(n)=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[n]||P.other}</svg>`;
 
@@ -274,13 +291,41 @@ const REG_TEMPLATE=[
  ['Топливный фильтр','filter',60000,null]
 ];
 
-let S={cars:[],car:null,regs:[],rems:[],events:[],settings:{warnKm:1000,warnDays:30,odoMonthly:true}};
+let S={cars:[],car:null,regs:[],rems:[],events:[],stock:[],settings:{warnKm:1000,warnDays:30,odoMonthly:true}};
 let UI={tab:'home',toSeg:'regs',hType:'all',hq:'',statRange:'12'};
 
 const car=()=>S.cars.find(c=>c.id===S.car)||S.cars[0]||null;
 const evs=()=>{const c=car();return c?S.events.filter(e=>e.car===c.id):[]};
 const regs=()=>{const c=car();return c?S.regs.filter(r=>r.car===c.id):[]};
 const rems=()=>{const c=car();return c?S.rems.filter(r=>r.car===c.id):[]};
+const stockAll=()=>{const c=car();S.stock=S.stock||[];return c?S.stock.filter(x=>x.car===c.id&&(x.qty??1)>0):[]};
+/* сопоставление деталей и работ ТО по словам */
+const GEN=new Set(['фильт','масло','жидко','замен','перед','задни','задня','компл','прове','части','ремен','элеме','набор','для','oil','new','шт','левый','правы','левая','права']);
+const SYN={'мотор':'двига','двс':'двига','atf':'акпп','акп':'акпп','антиф':'охлаж','тосол':'охлаж','свеча':'свечи','акб':'аккум','кабин':'салон','ступи':'ступи'};
+function stems(t){return String(t||'').toLowerCase().replace(/ё/g,'е').split(/[^a-zа-я0-9]+/).filter(w=>w.length>=3).map(w=>{const k=w.slice(0,5);return SYN[k]||SYN[w]||k})}
+function simScore(a,b){const A=new Set(stems(a)),B=new Set(stems(b));let ng=0,g=0;for(const x of A)if(B.has(x)){if(GEN.has(x))g++;else ng++}return ng?ng*10+g:0}
+function regForItem(it){if(it.regId===false)return null;if(it.regId){const r=S.regs.find(x=>x.id===it.regId);if(r)return r}let best=null,bs=0;for(const r of regs()){const sc=simScore(it.name,r.title);if(sc>bs){bs=sc;best=r}}return best}
+function stockFor(r){return stockAll().filter(it=>{const m=regForItem(it);return m&&m.id===r.id})}
+function stockLabel(it){return [it.name,it.brand].filter(Boolean).join(' ')+(it.place?' · '+it.place:'')+(it.ordered?' (заказано)':'')}
+function stockHint(r){const L=stockFor(r);return L.length?`<div class="stockhint">${ico('box')}<span>На складе: ${L.map(i=>esc(stockLabel(i))).join('; ')}</span></div>`:''}
+const RATE={up:'👍',mid:'😐',down:'👎'};
+const side=x=>/задн/i.test(x)?'r':/перед/i.test(x)?'f':'';
+function partHistory(name,exceptId){
+  const c=car();if(!c||!name||name.trim().length<3)return [];
+  const out=[];
+  for(const e of evs()){if(e.id===exceptId)continue;for(const p of (e.parts||[])){if(!p.name||/^Работа:/i.test(p.name))continue;const sa=side(name),sb=side(p.name);if(sa&&sb&&sa!==sb)continue;const hq=stems(name)[0],hp=stems(p.name)[0];if(!stems(p.name).includes(hq)&&!stems(name).includes(hp))continue;const sc=simScore(name,p.name);if(sc>=10)out.push({e,p,sc})}}
+  out.sort((a,b)=>a.e.date<b.e.date?-1:1);
+  return out;
+}
+function partHintHtml(name,exceptId){
+  const H=partHistory(name,exceptId);if(!H.length)return '';
+  const last=H.slice(-2);
+  return last.map((h,i)=>{const idx=H.indexOf(h);const next=H[idx+1];let life='';
+    if(next&&h.e.odo&&next.e.odo&&next.e.odo>h.e.odo)life=`прослужила ${km(next.e.odo-h.e.odo)}`;
+    else if(!next&&h.e.odo&&curOdo()>h.e.odo)life=`стоит уже ${km(curOdo()-h.e.odo)}`;
+    const who=[h.p.brand,h.p.pn].filter(Boolean).join(' · ')||h.p.name;
+    return `${i===last.length-1?'<b>В прошлый раз</b>':'Раньше'}: ${fdate(h.e.date)} · ${esc(who)}${h.p.price?' · '+money(h.p.price):''}${life?' · '+life:''}${h.p.rate?' '+RATE[h.p.rate]:''}${h.p.note?' · '+esc(h.p.note):''}`}).join('<br>');
+}
 function curOdo(){const c=car();if(!c)return 0;let m=c.odo||0;for(const e of evs())if(e.odo>m)m=e.odo;return m}
 function odoPoints(){const c=car();if(!c)return[];const pts=[];for(const e of evs())if(e.odo)pts.push([e.date,e.odo]);for(const p of (c.odoLog||[]))pts.push([p.d,p.o]);pts.sort((a,b)=>a[0]<b[0]?-1:a[0]>b[0]?1:a[1]-b[1]);return pts}
 function kmPerDay(){const p=odoPoints();if(p.length<2)return null;const a=p[0],b=p[p.length-1];const d=daysBetween(a[0],b[0]);if(d<14||b[1]<=a[1])return null;return (b[1]-a[1])/d}
@@ -297,8 +342,11 @@ function regStatus(r){
   if(kmLeft!=null&&kpd)est=Math.round(kmLeft/kpd);
   const overdue=(kmLeft!=null&&kmLeft<=0)||(daysLeft!=null&&daysLeft<=0);
   const warn=(kmLeft!=null&&kmLeft<S.settings.warnKm)||(daysLeft!=null&&daysLeft<S.settings.warnDays)||(est!=null&&est<S.settings.warnDays);
-  return {state:overdue?'bad':warn?'warn':'ok',pct,kmLeft,daysLeft,est};
+  const st=overdue?'bad':warn?'warn':'ok';
+  if(st!=='ok'&&r.snooze&&((r.snooze.odo&&o<r.snooze.odo)||(r.snooze.date&&t<r.snooze.date)))return {state:'ok',snoozed:true,pct,kmLeft,daysLeft,est};
+  return {state:st,pct,kmLeft,daysLeft,est};
 }
+function snoozeTxt(r){const z=r.snooze;if(!z)return '';return z.odo?`до ${km(z.odo)}`:`до ${fdate(z.date)}`}
 function remStatus(r){
   if(r.done)return {state:'done'};
   const o=curOdo(),t=today();let kmLeft=null,daysLeft=null;
@@ -355,7 +403,7 @@ const storeText=()=>store==='device'?'Сохраняется в памяти т�
 const writeQ={};
 function lsSave(){if(NATIVE){try{window.Android.save(JSON.stringify(S))}catch(e){toast('Не удалось сохранить')}scheduleNativeSoon();return}try{localStorage.setItem(LS,JSON.stringify(S))}catch(e){}}
 function lsLoad(){try{const t=localStorage.getItem(LS);if(t){const o=JSON.parse(t);if(o&&o.cars)return o}}catch(e){}return null}
-function garageDoc(){return {cars:S.cars,car:S.car,regs:S.regs,rems:S.rems,settings:S.settings,v:1}}
+function garageDoc(){return {cars:S.cars,car:S.car,regs:S.regs,rems:S.rems,stock:S.stock||[],settings:S.settings,v:1}}
 function yearDoc(y){return {items:S.events.filter(e=>e.date&&e.date.slice(0,4)===String(y))}}
 function queueWrite(id,dataFn){
   if(!col)return;
@@ -389,9 +437,9 @@ async function initStore(){
       store='cloud';
       if(local&&local.cars&&local.cars.length){saveAll();toast('Данные из браузера перенесены в облако')}
     }else{
-      const ns={cars:[],car:null,regs:[],rems:[],events:[],settings:{warnKm:1000,warnDays:30}};
+      const ns={cars:[],car:null,regs:[],rems:[],events:[],stock:[],settings:{warnKm:1000,warnDays:30}};
       for(const doc of snap.docs){const b=doc.data()||{};
-        if(doc.id==='garage'){Object.assign(ns,{cars:b.cars||[],car:b.car||null,regs:b.regs||[],rems:b.rems||[],settings:Object.assign(ns.settings,b.settings||{})})}
+        if(doc.id==='garage'){Object.assign(ns,{cars:b.cars||[],car:b.car||null,regs:b.regs||[],rems:b.rems||[],stock:b.stock||[],settings:Object.assign(ns.settings,b.settings||{})})}
         else if(doc.id.startsWith('log-')){ns.events.push(...(b.items||[]))}
       }
       S=ns;store='cloud';lsSave();
@@ -418,8 +466,10 @@ function scheduleNative(){
       if(s.kmLeft!=null&&kpd)w.push(addDays(today(),Math.round((s.kmLeft-S.settings.warnKm)/kpd)));
       w.sort();
       const nm=c.name+': '+r.title;
-      if(w[0])list.push({id:'w'+r.id,at:at9(w[0]),title:nm,text:'Скоро по графику ТО'+(r.everyKm?' (каждые '+nf.format(r.everyKm)+' км)':'')});
-      if(due)list.push({id:'d'+r.id,at:at9(due),title:nm,text:'Пора: подошёл срок по графику ТО'});
+      const sh=stockFor(r);const shT=sh.length?'. На складе: '+sh.map(stockLabel).join('; '):'';
+      if(w[0])list.push({id:'w'+r.id,at:at9(w[0]),title:nm,text:'Скоро по графику ТО'+(r.everyKm?' (каждые '+nf.format(r.everyKm)+' км)':'')+shT});
+      if(due)list.push({id:'d'+r.id,at:at9(due),title:nm,text:'Пора: подошёл срок по графику ТО'+shT});
+      if(r.snooze&&r.snooze.date)list.push({id:'z'+r.id,at:at9(r.snooze.date),title:nm,text:'Отсрочка закончилась'+shT});
     }
     for(const r of rems()){
       if(r.done||!r.date)continue;const nm=c.name+': '+r.title;
@@ -503,8 +553,8 @@ function alertRow(a){
   if(a.kind==='reg'&&s.est!=null&&s.daysLeft==null&&s.kmLeft>0)line.push(`≈ ${daysTxt(s.est)} при вашем пробеге`);
   const icon=a.kind==='reg'?(a.r.icon||'wrench'):'bell';
   const due=a.kind==='reg'?regDueDate(a.r):a.r.date;
-  return `<div class="alert ${s.state}"><span class="ic">${ico(icon)}</span><div><span class="pill ${s.state}">${s.state==='bad'?'Пора':'Скоро'}</span> <span class="muted" style="font-size:12px">${a.kind==='reg'?'график ТО':'напоминание'}</span><b>${esc(t)}</b><span class="muted" style="font-size:13px">${line.join(' · ')}</span>
-   <div class="acts"><button class="btn sm pri" data-act="${a.kind==='reg'?'regdone':'remdone'}" data-id="${a.r.id}">${ico('check')} Выполнено</button>${due?`<a class="btn sm" href="${gcalUrl(t,due,line.join(', '))}" target="_blank" rel="noopener">${ico('cal')} В Google Календарь</a>`:''}<button class="btn sm" data-act="${a.kind==='reg'?'regedit':'remedit'}" data-id="${a.r.id}">Изменить</button></div></div></div>`;
+  return `<div class="alert ${s.state}"><span class="ic">${ico(icon)}</span><div><span class="pill ${s.state}">${s.state==='bad'?'Пора':'Скоро'}</span> <span class="muted" style="font-size:12px">${a.kind==='reg'?'график ТО':'напоминание'}</span><b>${esc(t)}</b><span class="muted" style="font-size:13px">${line.join(' · ')}</span>${a.kind==='reg'?stockHint(a.r):''}
+   <div class="acts"><button class="btn sm pri" data-act="${a.kind==='reg'?'regdone':'remdone'}" data-id="${a.r.id}">${ico('check')} Выполнено</button>${due?`<a class="btn sm" href="${gcalUrl(t,due,line.join(', '))}" target="_blank" rel="noopener">${ico('cal')} В Google Календарь</a>`:''}${a.kind==='reg'?`<button class="btn sm" data-act="snooze" data-id="${a.r.id}">${ico('snooze')} Отложить</button>`:''}<button class="btn sm" data-act="${a.kind==='reg'?'regedit':'remedit'}" data-id="${a.r.id}">Изменить</button></div></div></div>`;
 }
 
 function viewHome(){
@@ -540,7 +590,7 @@ function viewHist(){
   let E=[...evs()].sort((a,b)=>b.date.localeCompare(a.date)||(b.odo||0)-(a.odo||0));
   if(UI.hType!=='all')E=E.filter(e=>e.type===UI.hType);
   const q=UI.hq.trim().toLowerCase();
-  if(q)E=E.filter(e=>[evTitle(e),e.place,e.note,e.sub,...(e.parts||[]).map(p=>p.name)].join(' ').toLowerCase().includes(q));
+  if(q)E=E.filter(e=>[evTitle(e),e.place,e.note,e.sub,...(e.parts||[]).map(p=>[p.name,p.brand,p.pn].join(' '))].join(' ').toLowerCase().includes(q));
   const groups={};for(const e of E)(groups[e.date.slice(0,7)]||(groups[e.date.slice(0,7)]=[])).push(e);
   const chips=[['all','Все'],...Object.entries(TYPES).map(([k,v])=>[k,v.l])];
   return `<div class="search">${ico('search')}<input id="hq" type="search" placeholder="Поиск: колодки, Helios, страховка…" value="${esc(UI.hq)}" autocomplete="off"></div>
@@ -556,12 +606,13 @@ function regCard(r){
   if(s.daysLeft!=null)left.push(s.daysLeft<=0?`−${daysTxt(-s.daysLeft)}`:daysTxt(s.daysLeft));
   const per=[r.everyKm?km(r.everyKm):'',r.everyMonths?`${r.everyMonths} мес`:''].filter(Boolean).join(' / ');
   return `<article class="card reg"><div class="badge" style="color:${s.state==='unset'?'var(--muted)':col}">${ico(r.icon||'wrench')}</div><div style="min-width:0">
-   <div style="display:flex;justify-content:space-between;gap:8px;align-items:start"><h3>${esc(r.title)}</h3><span class="pill ${s.state}">${s.state==='unset'?'не настроено':s.state==='bad'?'пора':s.state==='warn'?'скоро':'в норме'}</span></div>
+   <div style="display:flex;justify-content:space-between;gap:8px;align-items:start"><h3>${esc(r.title)}</h3><span class="pill ${s.snoozed?'unset':s.state}">${s.snoozed?'отложено':s.state==='unset'?'не настроено':s.state==='bad'?'пора':s.state==='warn'?'скоро':'в норме'}</span></div>
    ${s.state==='unset'?`<p class="muted" style="margin:6px 0 0;font-size:13px">Периодичность ${per||'не задана'}. Укажите, когда и на каком пробеге делали последний раз.</p>`:
    `<div class="bar" role="img" aria-label="Ресурс ${pct}%"><i style="width:${pct}%;background:${col}"></i><span>${pct}%</span></div>
    <div class="kv"><div><span>До выполнения</span><b>${left.join(' · ')}</b>${s.est!=null&&s.kmLeft>0?`<small class="muted" style="display:block;font-size:12px">≈ ${fdate(addDays(today(),s.est))}</small>`:''}</div><div><span>Периодичность</span><b>${per}</b></div>
-   <div><span>Последний раз</span><b style="font-size:15px">${[r.lastDate?fdate(r.lastDate):'',r.lastOdo!=null?km(r.lastOdo):''].filter(Boolean).join(', ')}</b></div></div>`}
-   <div class="acts">${s.state!=='unset'?`<button class="btn sm" data-act="regdone" data-id="${r.id}">${ico('check')} Сделано сегодня</button>`:''}<button class="btn sm${s.state==='unset'?' pri':''}" data-act="regedit" data-id="${r.id}">${s.state==='unset'?'Настроить':'Изменить'}</button></div>
+   <div><span>Последний раз</span><b style="font-size:15px">${[r.lastDate?fdate(r.lastDate):'',r.lastOdo!=null?km(r.lastOdo):''].filter(Boolean).join(', ')}</b></div>${s.snoozed?`<div><span>Отложено</span><b style="font-size:15px">${snoozeTxt(r)}</b></div>`:''}</div>`}
+   ${stockHint(r)}
+   <div class="acts">${s.state!=='unset'?`<button class="btn sm" data-act="regdone" data-id="${r.id}">${ico('check')} Сделано сегодня</button>`:''}${s.snoozed?`<button class="btn sm" data-act="unsnooze" data-id="${r.id}">Снять отсрочку</button>`:(s.state==='bad'||s.state==='warn')?`<button class="btn sm" data-act="snooze" data-id="${r.id}">${ico('snooze')} Отложить</button>`:''}<button class="btn sm${s.state==='unset'?' pri':''}" data-act="regedit" data-id="${r.id}">${s.state==='unset'?'Настроить':'Изменить'}</button></div>
   </div></article>`;
 }
 function remCard(r){
@@ -576,7 +627,9 @@ function remCard(r){
   </div></article>`;
 }
 function viewTO(){
-  const seg=`<div class="seg" role="tablist"><button role="tab" data-act="toseg" data-v="regs" aria-selected="${UI.toSeg==='regs'}">График ТО</button><button role="tab" data-act="toseg" data-v="rems" aria-selected="${UI.toSeg==='rems'}">Напоминания</button></div>`;
+  const nst=stockAll().length;
+  const seg=`<div class="seg" role="tablist" style="--segn:3"><button role="tab" data-act="toseg" data-v="regs" aria-selected="${UI.toSeg==='regs'}">График ТО</button><button role="tab" data-act="toseg" data-v="rems" aria-selected="${UI.toSeg==='rems'}">Напоминания</button><button role="tab" data-act="toseg" data-v="stock" aria-selected="${UI.toSeg==='stock'}">Склад${nst?' · '+nst:''}</button></div>`;
+  if(UI.toSeg==='stock')return seg+viewStock();
   if(UI.toSeg==='regs'){
     const R=[...regs()].sort((a,b)=>{const o={bad:0,warn:1,ok:2,unset:3};const sa=regStatus(a),sb=regStatus(b);return o[sa.state]-o[sb.state]||(sa.pct??2)-(sb.pct??2)});
     return seg+`<div class="sec-h"><h2>${R.length} ${plural(R.length,'работа','работы','работ')}</h2><button class="link" data-act="regedit">+ Добавить работу</button></div>`+
@@ -590,6 +643,79 @@ function viewTO(){
    ${L.length?L.map(remCard).join(''):`<div class="card empty"><b>Нет напоминаний</b>Например: «проверить уровень масла» каждые 2 недели или «страховка» к определённой дате.</div>`}
    <p class="note">${NATIVE?'Уведомления приходят в 9:00: заранее (за указанное число дней) и в сам день. Напоминания по пробегу срабатывают, когда вы вносите заправку или пробег.':'Страница не может сама прислать уведомление, когда закрыта. Для дат есть кнопка «В календарь»: Google Календарь напомнит на телефоне. Напоминания по пробегу срабатывают, когда вы вносите заправку или пробег.'}</p>`;
 }
+
+function viewStock(){
+  const all=stockAll();const places=[...new Set(all.map(x=>x.place).filter(Boolean))];
+  const pf=UI.stPlace&&places.includes(UI.stPlace)?UI.stPlace:'all';
+  const L=all.filter(x=>pf==='all'||x.place===pf).sort((a,b)=>(a.ordered?1:0)-(b.ordered?1:0)||a.name.localeCompare(b.name,'ru'));
+  const sum=all.reduce((s,x)=>s+(x.price||0),0);const noPrice=all.filter(x=>!x.price).length;
+  return `<div class="sec-h"><h2>${all.length?`На складе на ${money(sum)}`:'Склад'}</h2><button class="link" data-act="stedit">+ Добавить</button></div>
+   ${noPrice&&all.length?`<p class="muted" style="margin:-8px 0 0;font-size:12px">${noPrice} ${plural(noPrice,'позиция','позиции','позиций')} без цены</p>`:''}
+   ${places.length>1?`<div class="chips">${[['all','Всё'],...places.map(p=>[p,p])].map(([k,l])=>`<button class="chip" data-act="stplacef" data-v="${esc(k)}" aria-pressed="${pf===k}">${esc(l)}</button>`).join('')}</div>`:''}
+   ${L.length?`<div class="card">${L.map(stockRow).join('')}</div>`:`<div class="card empty"><b>Склад пуст</b>Сюда — то, что купил заранее и ещё не поставил: фильтры, ремни, колодки. Цена необязательна. Когда подойдёт срок по графику ТО, карточка подскажет, что деталь уже есть.</div>`}
+   <p class="note">В расходы и ₸/км деталь попадает, когда нажимаете «Установил»: создаётся запись ремонта с этой деталью и ценой.</p>`;
+}
+function stockRow(it){
+  const r=regForItem(it);
+  return `<div class="stk" style="border-top:1px solid var(--line)"><div class="top"><b>${esc(it.name)}${(it.qty||1)>1?` ×${it.qty}`:''}</b><span class="num" style="font-size:16px;white-space:nowrap">${it.price?money(it.price):'<span class="muted" style="font-size:13px">без цены</span>'}</span></div>
+   ${it.brand||it.pn?`<div class="muted" style="font-size:13px">${esc([it.brand,it.pn].filter(Boolean).join(' · '))}</div>`:''}
+   <div class="tags">${it.place?`<span class="tag">${esc(it.place)}</span>`:''}${it.ordered?'<span class="pill warn">заказано</span>':''}${r?`<span class="tag">для: ${esc(r.title)}</span>`:''}${it.note?`<span class="tag">${esc(it.note)}</span>`:''}</div>
+   <div class="acts" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${it.ordered?`<button class="btn sm" data-act="starrived" data-id="${it.id}">${ico('check')} Пришло</button>`:`<button class="btn sm pri" data-act="stinstall" data-id="${it.id}">${ico('wrench')} Установил</button>`}<button class="btn sm" data-act="stedit" data-id="${it.id}">Изменить</button></div></div>`;
+}
+function stockForm(it){
+  const x=it||{name:'',brand:'',pn:'',qty:1,price:'',place:'',note:'',ordered:false};
+  const places=[...new Set(['Дача','Дом',...(S.stock||[]).map(i=>i.place).filter(Boolean)])];
+  const guess=x.name?regForItem(x):null;
+  const R=regs();
+  const body=`<div class="form">${fld('s_name','Что','placeholder="Фильтр масляный" list="pnames"',x.name)}
+   <datalist id="pnames">${partNames().map(n=>`<option value="${esc(n)}">`).join('')}</datalist>
+   <div class="row">${fld('s_brand','Фирма','placeholder="Purflux"',x.brand||'')}${fld('s_pn','Артикул','placeholder="LS867B"',x.pn||'')}</div>
+   <div class="row">${fld('s_qty','Количество','type="number" inputmode="numeric" min="1"',x.qty||1)}${fld('s_price','Цена за всё, ₸','type="number" inputmode="decimal" min="0" placeholder="можно пусто"',x.price||'')}</div>
+   <div class="f"><label for="s_place">Где лежит</label><input id="s_place" list="splaces" value="${esc(x.place||'')}" placeholder="Дача"><datalist id="splaces">${places.map(p=>`<option value="${esc(p)}">`).join('')}</datalist>
+   <div class="chips" style="margin-top:6px">${places.map(p=>`<button type="button" class="chip" data-act="stplace" data-v="${esc(p)}">${esc(p)}</button>`).join('')}</div></div>
+   ${R.length?`<div class="f"><label for="s_reg">Для работы ТО</label><select id="s_reg"><option value="">${guess&&!x.regId&&x.regId!==false?'Угадать сам ('+esc(guess.title)+')':'Угадать сам'}</option><option value="none" ${x.regId===false?'selected':''}>Ни к какой</option>${R.map(r=>`<option value="${r.id}" ${x.regId===r.id?'selected':''}>${esc(r.title)}</option>`).join('')}</select></div>`:''}
+   <label class="check"><input type="checkbox" id="s_ord" ${x.ordered?'checked':''}> Заказано, ещё не пришло</label>
+   ${fld('s_note','Заметка','placeholder="Ozon, на распродаже"',x.note||'')}
+   <div class="phint" id="s_hint">${x.name?partHintHtml(x.name):''}</div></div>`;
+  openSheet(it?'Позиция на складе':'На склад',body,{
+    onSave:()=>{const n=val('s_name');if(!n){toast('Напишите, что это');return}
+      const o=it||{id:uid(),car:car().id,date:today()};
+      const rs=$('#s_reg')?$('#s_reg').value:'';
+      Object.assign(o,{name:n,brand:val('s_brand'),pn:val('s_pn'),qty:Math.max(1,Math.round(num(val('s_qty'))||1)),price:num(val('s_price')),place:val('s_place'),note:val('s_note'),ordered:$('#s_ord').checked,regId:rs==='none'?false:(rs||undefined)});
+      if(!it)S.stock.push(o);saveGarage();closeSheet();UI.tab='to';UI.toSeg='stock';render();toast(it?'Сохранено':'Добавлено на склад')},
+    onDelete:it?()=>{S.stock=S.stock.filter(y=>y.id!==it.id);saveGarage();closeSheet();render();toast('Убрано со склада')}:null
+  });
+}
+function partNames(){const set=new Set();for(const e of evs())for(const p of (e.parts||[]))if(p.name&&!/^Работа:/i.test(p.name))set.add(p.name.replace(/ ×\d+.*$| · .*$/,''));for(const i of (S.stock||[]))set.add(i.name);return [...set].slice(0,300)}
+function installFromStock(itId,regId){
+  const it=(S.stock||[]).find(x=>x.id===itId);if(!it)return;
+  const r=regId?S.regs.find(x=>x.id===regId):regForItem(it);
+  const unit=it.price?Math.round(it.price/(it.qty||1)):null;
+  const type=r?'service':'repair';
+  closeSheet();
+  evForm(type,null,{title:(r?r.title:'Замена: '+it.name.toLowerCase()),parts:[{name:it.name,brand:it.brand||'',pn:it.pn||'',price:unit??''}],regsDone:r?[r.id]:[],cost:unit||0});
+  $('#layer')._fromStock=it.id;
+}
+function consumeStock(itId){
+  const it=(S.stock||[]).find(x=>x.id===itId);if(!it)return;
+  const q=it.qty||1;
+  if(q<=1)S.stock=S.stock.filter(x=>x.id!==itId);
+  else{if(it.price)it.price=Math.round(it.price*(q-1)/q);it.qty=q-1}
+}
+function snoozeSheet(r){
+  openSheet('Отложить: '+r.title,`<div class="form"><p class="muted" style="margin:0">Карточка перестанет гореть до выбранного пробега или даты, потом напомнит снова.</p>
+   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+    <button class="btn" data-act="snoozeset" data-id="${r.id}" data-v="km500">+500 км</button><button class="btn" data-act="snoozeset" data-id="${r.id}" data-v="km1000">+1 000 км</button>
+    <button class="btn" data-act="snoozeset" data-id="${r.id}" data-v="d14">+2 недели</button><button class="btn" data-act="snoozeset" data-id="${r.id}" data-v="m1">+1 месяц</button></div>
+   <p class="muted" style="margin:0;font-size:12px">Текущий пробег: ${km(curOdo())}.</p></div>`);
+}
+function regDoneSheet(r){
+  const L=stockFor(r).filter(i=>!i.ordered);
+  openSheet('Сделано: '+r.title,`<div class="form"><p style="margin:0">Взять деталь со склада? Создам запись с ценой и спишу её со склада.</p>
+   ${L.map(i=>`<button class="btn pri" style="justify-content:flex-start;text-align:left" data-act="regdonestock" data-id="${r.id}" data-s="${i.id}">${ico('box')} ${esc(stockLabel(i))}${i.price?' · '+money(i.price/(i.qty||1)):''}</button>`).join('')}
+   <button class="btn" data-act="regdoneplain" data-id="${r.id}">Без склада, просто отметить</button></div>`);
+}
+function markRegDone(r){r.lastDate=today();r.lastOdo=curOdo();delete r.snooze;saveGarage();closeSheet();render();toast(`«${r.title}» отмечено. Запишите расходы через «+», если были.`)}
 
 function viewStats(){
   const all=evs();const t=today();
@@ -641,15 +767,15 @@ function viewStats(){
 function openSheet(title,body,{onSave,onDelete,saveLabel='Сохранить'}={}){
   const L=$('#layer');
   L.innerHTML=`<div class="sheet-bg" data-act="sheetbg"><div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="sheet-h wrap"><button class="iconbtn" data-act="close" aria-label="Закрыть">${ico('x')}</button><h3>${esc(title)}</h3>${onSave?`<button class="btn pri" data-act="save">${ico('check')} ${saveLabel}</button>`:''}</div><div class="wrap">${body}${onDelete?`<div style="padding:4px 0 10px" id="delzone"><button class="btn danger" data-act="del">${ico('trash')} Удалить</button></div>`:''}</div></div></div>`;
-  L._save=onSave;L._del=onDelete;
+  L._save=onSave;L._del=onDelete;L._fromStock=null;
   setTimeout(()=>{const f=L.querySelector('input:not([type=checkbox]):not([type=date]),select');if(f&&!('ontouchstart' in window))f.focus()},50);
 }
 function closeSheet(){$('#layer').innerHTML='';}
 const fld=(id,label,attrs='',val='')=>`<div class="f"><label for="${id}">${label}</label><input id="${id}" ${attrs} value="${esc(val)}"></div>`;
 const val=id=>{const e=document.getElementById(id);return e?e.value.trim():''};
 
-function evForm(type,ev){
-  const e=ev||{type,date:today(),odo:curOdo()||'',cost:''};
+function evForm(type,ev,preset){
+  const e=ev||Object.assign({type,date:today(),odo:curOdo()||'',cost:''},preset||{});
   type=e.type;
   const c=car();
   let body=`<div class="form"><div class="row">${fld('f_date','Дата','type="date"',e.date)}${fld('f_odo','Пробег, км','type="number" inputmode="numeric" min="0"',e.odo??'')}</div>`;
@@ -669,7 +795,7 @@ function evForm(type,ev){
     body+=fld('f_title','Что делали',`placeholder="${type==='service'?'Замена масла и фильтров':type==='repair'?'Замена задних колодок':'Покупка дисков'}" list="titles"`,e.title||'')+
      `<datalist id="titles">${[...new Set(S.regs.map(r=>r.title).concat(S.events.filter(x=>x.title).map(x=>x.title)))].slice(0,60).map(x=>`<option value="${esc(x)}">`).join('')}</datalist>`+
      fld('f_place','СТО / магазин','placeholder="где делали"',e.place||'')+
-     `<div class="f"><label>Запчасти и материалы</label><div id="parts" style="display:flex;flex-direction:column;gap:6px">${parts.map(partRow).join('')}</div><button type="button" class="btn sm" style="margin-top:8px" data-act="addpart">${ico('plus')} Деталь</button></div>
+     `<div class="f"><label>Запчасти и материалы</label><div id="parts" style="display:flex;flex-direction:column;gap:8px">${parts.map(p=>partRow(p,ev&&ev.id)).join('')}</div><datalist id="pnames">${partNames().map(n=>`<option value="${esc(n)}">`).join('')}</datalist><button type="button" class="btn sm" style="margin-top:8px" data-act="addpart">${ico('plus')} Деталь</button></div>
      <div class="row">${fld('f_work','Стоимость работ, ₸','type="number" inputmode="decimal" min="0"',e.work??'')}<div class="f"><label>Итого</label><div class="total"><span class="muted" style="font-size:12px">₸</span><b id="f_total">${nf.format(e.cost||0)}</b></div></div></div>`;
     const R=regs();
     if(type!=='tuning'&&R.length){
@@ -690,7 +816,9 @@ function evForm(type,ev){
   $('#layer')._grade=(e.fuel&&e.fuel.grade)||(c&&c.grade)||'АИ-95';
   $('#layer')._regsDone=new Set(e.regsDone||[]);
 }
-const partRow=p=>`<div class="part"><div class="f"><input class="p_name" placeholder="Деталь, артикул" value="${esc(p.name||'')}" aria-label="Деталь"></div><div class="f"><input class="p_price" type="number" inputmode="decimal" min="0" placeholder="₸" value="${esc(p.price??'')}" aria-label="Цена"></div><button type="button" class="iconbtn" data-act="delpart" aria-label="Убрать деталь">${ico('x')}</button></div>`;
+const partRow=(p,exId)=>{const isWork=/^Работа:/i.test(p.name||'');return `<div class="part2" data-rate="${p.rate||''}" data-pnote="${esc(p.note||'')}"><div class="part"><div class="f"><input class="p_name" placeholder="Деталь" list="pnames" value="${esc(p.name||'')}" aria-label="Деталь"></div><div class="f"><input class="p_price" type="number" inputmode="decimal" min="0" placeholder="₸" value="${esc(p.price??'')}" aria-label="Цена"></div><button type="button" class="iconbtn" data-act="delpart" aria-label="Убрать деталь">${ico('x')}</button></div>
+ ${isWork?'':`<div class="pmeta"><input class="p_brand" placeholder="Фирма" value="${esc(p.brand||'')}" aria-label="Фирма"><input class="p_pn" placeholder="Артикул" value="${esc(p.pn||'')}" aria-label="Артикул"><span class="rate" role="group" aria-label="Оценка">${['up','mid','down'].map(k=>`<button type="button" data-act="prate" data-v="${k}" aria-pressed="${p.rate===k}" aria-label="${k==='up'?'хорошая':k==='mid'?'так себе':'не брать'}">${RATE[k]}</button>`).join('')}</span></div>`}
+ <div class="phint">${p.name&&!isWork?partHintHtml(p.name,exId):''}</div></div>`};
 function partsTotal(){let s=0;document.querySelectorAll('#parts .p_price').forEach(i=>s+=num(i.value)||0);return s+(num(val('f_work'))||0)}
 
 function saveEvent(type,ev){
@@ -707,17 +835,18 @@ function saveEvent(type,ev){
     const cc=car();if(cc&&cc.grade!==e.fuel.grade){cc.grade=e.fuel.grade;saveGarage()}
   }else if(type==='service'||type==='repair'||type==='tuning'){
     e.title=val('f_title');
-    e.parts=[...document.querySelectorAll('#parts .part')].map(r=>({name:r.querySelector('.p_name').value.trim(),price:num(r.querySelector('.p_price').value)})).filter(p=>p.name||p.price);
+    e.parts=[...document.querySelectorAll('#parts .part2')].map(r=>{const o={name:r.querySelector('.p_name').value.trim(),price:num(r.querySelector('.p_price').value)};const b=r.querySelector('.p_brand'),n=r.querySelector('.p_pn');if(b&&b.value.trim())o.brand=b.value.trim();if(n&&n.value.trim())o.pn=n.value.trim();if(r.dataset.rate)o.rate=r.dataset.rate;if(r.dataset.pnote)o.note=r.dataset.pnote;return o}).filter(p=>p.name||p.price);
     e.work=num(val('f_work'));e.cost=Math.round(partsTotal());
     e.regsDone=[...($('#layer')._regsDone||[])];
     if(!e.title&&!e.parts.length){toast('Напишите, что делали');return}
-    for(const id of e.regsDone){const r=S.regs.find(x=>x.id===id);if(r&&(!r.lastDate||date>=r.lastDate)){r.lastDate=date;if(odo!=null)r.lastOdo=odo}}
+    for(const id of e.regsDone){const r=S.regs.find(x=>x.id===id);if(r&&(!r.lastDate||date>=r.lastDate)){r.lastDate=date;if(odo!=null)r.lastOdo=odo;delete r.snooze}}
     if(e.regsDone.length)saveGarage();
   }else if(type==='other'){
     e.sub=val('f_sub');e.title=val('f_title');e.cost=Math.round(num(val('f_cost'))||0);
   }else{e.cost=Math.round(num(val('f_cost'))||0)}
   if(odo!=null&&prevOdo&&odo<prevOdo-50000){toast('Пробег сильно меньше текущего. Проверьте цифры.');return}
   if(ev)S.events=S.events.map(x=>x.id===e.id?e:x);else S.events.push(e);
+  const fromStock=$('#layer')._fromStock;if(!ev&&fromStock){consumeStock(fromStock);saveGarage()}
   saveYears(date.slice(0,4),oldYear);
   closeSheet();
   const fired=odo!=null&&odo>prevOdo?alertsList().filter(a=>a.s.kmLeft!=null&&a.s.kmLeft<S.settings.warnKm):[];
@@ -775,7 +904,7 @@ function carForm(c){
       if(!c){S.cars.push(it);S.car=it.id}
       saveGarage();closeSheet();UI.tab='home';render();
       if(!c){toast('Автомобиль добавлен');setTimeout(()=>offerTemplate(),300)}},
-    onDelete:c&&S.cars.length>0?()=>{S.events=S.events.filter(e=>e.car!==c.id);S.regs=S.regs.filter(e=>e.car!==c.id);S.rems=S.rems.filter(e=>e.car!==c.id);S.cars=S.cars.filter(y=>y.id!==c.id);S.car=S.cars[0]?.id||null;saveAll();closeSheet();render()}:null
+    onDelete:c&&S.cars.length>0?()=>{S.events=S.events.filter(e=>e.car!==c.id);S.regs=S.regs.filter(e=>e.car!==c.id);S.rems=S.rems.filter(e=>e.car!==c.id);S.stock=(S.stock||[]).filter(e=>e.car!==c.id);S.cars=S.cars.filter(y=>y.id!==c.id);S.car=S.cars[0]?.id||null;saveAll();closeSheet();render()}:null
   });
 }
 function offerTemplate(){
@@ -812,17 +941,20 @@ function previewMerge(o){
   const sum=fresh.reduce((s,e)=>s+(e.cost||0),0);
   const regPlan=(Array.isArray(o.regs)?o.regs:[]).map(r=>{const ex=regs().find(x=>x.title.toLowerCase().includes((r.match||r.title).toLowerCase()));
     const skip=ex&&ex.lastDate&&r.lastDate&&ex.lastDate>r.lastDate;return {r,ex,skip}}).filter(x=>!x.skip);
-  $('#layer')._merge={o,fresh,odoNew,regPlan};
+  const sids=new Set((S.stock||[]).map(x=>x.importId).filter(Boolean));
+  const stockNew=(Array.isArray(o.stock)?o.stock:[]).filter(x=>x&&x.name&&!(x.importId&&sids.has(x.importId)));
+  $('#layer')._merge={o,fresh,odoNew,regPlan,stockNew};
   openSheet('Добавить записи',`<div class="form">${o.title?`<p style="margin:0"><b>${esc(o.title)}</b></p>`:''}
    <div class="card pad" style="display:grid;gap:6px">
     <div>Новых записей: <b class="num" style="font-size:20px">${fresh.length}</b>${ys.length?` <span class="muted">(${ys[0]===ys[ys.length-1]?ys[0]:ys[0]+'–'+ys[ys.length-1]})</span>`:''}</div>
     ${fresh.length?`<div class="muted" style="font-size:13px">${Object.entries(byT).map(([k,n])=>TYPES[k].l+': '+n).join(' · ')}</div><div class="muted" style="font-size:13px">На сумму ${money(sum)}</div>`:''}
     ${odoNew.length?`<div class="muted" style="font-size:13px">Точек пробега: ${odoNew.length}</div>`:''}
+    ${stockNew.length?`<div class="muted" style="font-size:13px">На склад: ${stockNew.map(x=>esc(x.name)).join(', ')}</div>`:''}
     ${regPlan.length?`<div class="muted" style="font-size:13px">График ТО: ${regPlan.map(x=>esc(x.r.title)+(x.ex?'':' (новая)')).join(', ')}</div>`:''}
     ${dup?`<div class="muted" style="font-size:13px">Уже есть в журнале, пропущу: ${dup}</div>`:''}
    </div>
    ${o.car&&Object.keys(o.car).some(k=>o.car[k]&&!c[k])?`<p class="note" style="margin:0">Заполню пустые поля машины: ${Object.keys(o.car).filter(k=>o.car[k]&&!c[k]).map(k=>({year:'год',engine:'двигатель',plate:'госномер',vin:'VIN',name:'название'})[k]||k).join(', ')}.</p>`:''}
-   <div style="display:flex;gap:8px"><button class="btn pri" data-act="mergeyes" ${fresh.length||odoNew.length||regPlan.length?'':'disabled'}>${ico('check')} ${fresh.length?'Добавить '+fresh.length:'Применить'}</button><button class="btn" data-act="close">Отмена</button></div></div>`);
+   <div style="display:flex;gap:8px"><button class="btn pri" data-act="mergeyes" ${fresh.length||odoNew.length||regPlan.length||stockNew.length?'':'disabled'}>${ico('check')} ${fresh.length?'Добавить '+fresh.length:'Применить'}</button><button class="btn" data-act="close">Отмена</button></div></div>`);
 }
 function applyMerge(){
   const m=$('#layer')._merge;if(!m)return;const c=car();const years=new Set();let regHits=0;
@@ -836,14 +968,15 @@ function applyMerge(){
         if(!r.lastDate||e.date>=r.lastDate){r.lastDate=e.date;if(odo!=null)r.lastOdo=odo;regHits++;(e.regsDone=e.regsDone||[]).push(r.id)}}}
   }
   if(m.o.car)for(const k of ['year','engine','plate','vin'])if(m.o.car[k]&&!c[k])c[k]=m.o.car[k];
+  S.stock=S.stock||[];for(const x of (m.stockNew||[])){const it=Object.assign({},x,{id:uid(),car:c.id});S.stock.push(it)}
   for(const {r,ex} of (m.regPlan||[])){
     const t=ex||{id:uid(),car:c.id,icon:r.icon||'wrench'};
-    for(const k of ['title','icon','everyKm','everyMonths','lastDate','lastOdo','note'])if(r[k]!==undefined)t[k]=r[k];
+    for(const k of ['title','icon','everyKm','everyMonths','lastDate','lastOdo','note'])if(r[k]!==undefined)t[k]=r[k];if(r.lastDate)delete t.snooze;
     if(!ex)S.regs.push(t);regHits++;
   }
   if(m.odoNew&&m.odoNew.length){c.odoLog=(c.odoLog||[]).concat(m.odoNew.map(p=>({d:p.d,o:Math.round(p.o)}))).sort((a,b)=>a.d<b.d?-1:1);if(c.odoLog.length>300)c.odoLog=c.odoLog.slice(-300)}
   saveGarage();saveYears(...years);closeSheet();UI.tab='hist';render();
-  toast(`Добавлено записей: ${m.fresh.length}${m.odoNew&&m.odoNew.length?`, точек пробега: ${m.odoNew.length}`:''}${regHits?`, отмечено в графике ТО: ${regHits}`:''}`);
+  toast(`Добавлено записей: ${m.fresh.length}${m.stockNew&&m.stockNew.length?`, на склад: ${m.stockNew.length}`:''}${m.odoNew&&m.odoNew.length?`, точек пробега: ${m.odoNew.length}`:''}${regHits?`, отмечено в графике ТО: ${regHits}`:''}`);
 }
 window.__action=function(a){if(a==='odo'&&car())odoForm()};
 
@@ -914,7 +1047,18 @@ document.addEventListener('click',ev=>{
     case 'toseg':UI.toSeg=v;render();break;
     case 'srange':UI.statRange=v;render();break;
     case 'regedit':regForm(S.regs.find(x=>x.id===id));break;
-    case 'regdone':{const r=S.regs.find(x=>x.id===id);if(r){r.lastDate=today();r.lastOdo=curOdo();saveGarage();closeSheet();render();toast(`«${r.title}» отмечено. Запишите расходы через «+», если были.`)}break}
+    case 'regdone':{const r=S.regs.find(x=>x.id===id);if(r){if(stockFor(r).some(i=>!i.ordered))regDoneSheet(r);else markRegDone(r)}break}
+    case 'regdoneplain':{const r=S.regs.find(x=>x.id===id);if(r)markRegDone(r);break}
+    case 'regdonestock':installFromStock(b.dataset.s,id);break;
+    case 'snooze':{const r=S.regs.find(x=>x.id===id);if(r)snoozeSheet(r);break}
+    case 'snoozeset':{const r=S.regs.find(x=>x.id===id);if(r){r.snooze=v.startsWith('km')?{odo:curOdo()+(+v.slice(2))}:{date:v==='d14'?addDays(today(),14):addMonths(today(),1)};saveGarage();closeSheet();render();toast('Отложено '+snoozeTxt(r))}break}
+    case 'unsnooze':{const r=S.regs.find(x=>x.id===id);if(r){delete r.snooze;saveGarage();render();toast('Отсрочка снята')}break}
+    case 'stedit':stockForm(id?(S.stock||[]).find(x=>x.id===id):null);break;
+    case 'stinstall':installFromStock(id);break;
+    case 'starrived':{const it=(S.stock||[]).find(x=>x.id===id);if(it){it.ordered=false;saveGarage();render();toast('Отмечено: пришло')}break}
+    case 'stplace':{const i=$('#s_place');if(i)i.value=v;break}
+    case 'stplacef':UI.stPlace=v;render();break;
+    case 'prate':{const w=b.closest('.part2');const cur=w.dataset.rate;w.dataset.rate=cur===v?'':v;w.querySelectorAll('.rate button').forEach(x=>x.setAttribute('aria-pressed',x.dataset.v===w.dataset.rate));break}
     case 'regtemplate':loadTemplate();break;
     case 'remedit':remForm(S.rems.find(x=>x.id===id));break;
     case 'remsugg':{const t=b.dataset.t,d=b.dataset.d;let date='';if(d){const y=new Date().getFullYear();date=`${y}-${d}`;if(date<today())date=`${y+1}-${d}`}remForm(null,{title:t,date,repeat:d?12:''});break}
@@ -944,13 +1088,15 @@ document.addEventListener('click',ev=>{
     case 'grade':L._grade=v;document.querySelectorAll('#f_grades button').forEach(x=>x.setAttribute('aria-pressed',x.dataset.v===v));break;
     case 'regicon':L._icon=v;document.querySelectorAll('#g_icons button').forEach(x=>x.setAttribute('aria-pressed',x.dataset.v===v));break;
     case 'regpick':{const s=L._regsDone;if(s.has(id))s.delete(id);else s.add(id);b.setAttribute('aria-pressed',s.has(id));break}
-    case 'addpart':$('#parts').insertAdjacentHTML('beforeend',partRow({}));$('#parts .part:last-child .p_name').focus();break;
-    case 'delpart':{const r=b.closest('.part');if(document.querySelectorAll('#parts .part').length>1)r.remove();else{r.querySelectorAll('input').forEach(i=>i.value='')}$('#f_total').textContent=nf.format(partsTotal());break}
+    case 'addpart':$('#parts').insertAdjacentHTML('beforeend',partRow({}));$('#parts .part2:last-child .p_name').focus();break;
+    case 'delpart':{const r=b.closest('.part2');if(document.querySelectorAll('#parts .part2').length>1)r.remove();else{r.querySelectorAll('input').forEach(i=>i.value='')}$('#f_total').textContent=nf.format(partsTotal());break}
   }
 });
 document.addEventListener('input',ev=>{
   const t=ev.target;
   if(t.id==='hq'){UI.hq=t.value;const pos=t.selectionStart;render();const n=$('#hq');n.focus();try{n.setSelectionRange(pos,pos)}catch(e){}return}
+  if(t.classList.contains('p_name')){clearTimeout(t._h);t._h=setTimeout(()=>{const w=t.closest('.part2');const h=w&&w.querySelector('.phint');if(h)h.innerHTML=/^Работа:/i.test(t.value)?'':partHintHtml(t.value)},250)}
+  if(t.id==='s_name'){clearTimeout(t._h);t._h=setTimeout(()=>{const h=$('#s_hint');if(h)h.innerHTML=partHintHtml(t.value)},250)}
   if(t.classList.contains('p_price')||t.id==='f_work'){const tt=$('#f_total');if(tt)tt.textContent=nf.format(partsTotal())}
   if(t.id==='f_l'||t.id==='f_p'){const l=num(val('f_l')),p=num(val('f_p'));if(l&&p)$('#f_cost').value=Math.round(l*p)}
   if(t.id==='f_cost'){const l=num(val('f_l')),c=num(val('f_cost'));if(l&&c&&!num(val('f_p')))$('#f_p').value=(c/l).toFixed(1)}
@@ -970,7 +1116,7 @@ $('#importFile').addEventListener('change',async ev=>{
     previewMerge(o);return;
   }
   try{if(!o||!Array.isArray(o.cars)||!Array.isArray(o.events))throw 0;
-    S={cars:o.cars,car:o.car||o.cars[0]?.id||null,regs:o.regs||[],rems:o.rems||[],events:o.events,settings:Object.assign({warnKm:1000,warnDays:30,odoMonthly:true},o.settings||{})};
+    S={cars:o.cars,car:o.car||o.cars[0]?.id||null,regs:o.regs||[],rems:o.rems||[],stock:o.stock||[],events:o.events,settings:Object.assign({warnKm:1000,warnDays:30,odoMonthly:true},o.settings||{})};
     saveAll();closeSheet();render();toast(`Восстановлено: ${S.events.length} событий`)}
   catch(e){toast('Это не файл резервной копии Бортжурнала')}
 });
