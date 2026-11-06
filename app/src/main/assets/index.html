@@ -906,10 +906,55 @@ function saveEvent(type,ev){
   toast(fired.length?`Сохранено. Внимание: ${fired[0].r.title}${fired.length>1?` и ещё ${fired.length-1}`:''}`:'Сохранено');
 }
 
+/* пресеты работ по значку: [название, км, мес] */
+const REG_PRESETS={
+ oil:[['Замена масла и масляного фильтра',10000,12]],
+ filter:[['Замена воздушного фильтра',20000,24],['Замена топливного фильтра',60000,null]],
+ cabin:[['Замена салонного фильтра',15000,12]],
+ plug:[['Замена свечей зажигания',30000,null]],
+ belt:[['Замена ремня ГРМ, роликов и помпы',60000,60],['Замена ремня навесного оборудования (генератора)',60000,48]],
+ brake:[['Замена передних тормозных колодок',30000,24],['Замена задних тормозных колодок',50000,36],['Замена передних тормозных дисков',60000,null]],
+ coolant:[['Замена охлаждающей жидкости',60000,48]],
+ atf:[['Замена масла АКПП (частичная)',40000,36]],
+ battery:[['Замена аккумулятора',null,60]],
+ tyre:[['Проверка износа и давления шин',10000,6]],
+ align:[['Развал-схождение',15000,12]],
+ fluid:[['Замена тормозной жидкости',60000,24],['Замена жидкости ГУР/ЭГУР',60000,48]],
+ wrench:[]
+};
+function lastFromHistory(title){
+  const rs=stems(title);let best=null;
+  const ok=name=>{const st=stems(name);const head=st[0];if(!head)return false;if(!rs.includes(head)&&!(GEN.has(head)&&st.some(x=>!GEN.has(x)&&rs.includes(x))))return false;
+    if(rs.includes('грм')&&st.some(x=>x==='приво'||x==='генер'||x==='навес'))return false;
+    if(rs.includes('генер')&&st.includes('грм'))return false;
+    const sa=side(title),sb=side(name);if(sa&&sb&&sa!==sb)return false;return simScore(name,title)>=10};
+  for(const e of evs()){
+    const hitP=(e.parts||[]).find(p=>p.name&&!/^Работа:/i.test(p.name)&&ok(p.name));
+    const hit=hitP||(e.title&&ok(e.title)?{name:e.title}:null);
+    if(hit&&(!best||e.date>best.e.date))best={e,what:hit.name};
+  }
+  return best;
+}
+function applyRegPreset(icon,idx){
+  const L=$('#layer');const P=REG_PRESETS[icon]||[];const v=$('#g_var');
+  if(v)v.innerHTML=P.length>1?P.map((p,i)=>`<button type="button" class="chip" data-act="regvar" data-v="${icon}" data-i="${i}" aria-pressed="${i===idx}">${esc(p[0])}</button>`).join(''):'';
+  const p=P[idx];const hint=$('#g_hint');
+  if(!p){if(hint)hint.innerHTML='';return}
+  const set=(id,val)=>{const el=document.getElementById(id);if(el&&(!el.value||el.dataset.auto==='1')){el.value=val??'';el.dataset.auto='1'}};
+  set('g_title',p[0]);set('g_km',p[1]);set('g_mon',p[2]);
+  const CX=['замен','прове','части','перед','задни','задня','износ','давле'];const core=t=>new Set(stems(t).filter(x=>!CX.includes(x)));const sub=(a,b)=>a.size>0&&[...a].every(x=>b.has(x));const cp=core(p[0]);const exists=regs().find(r=>{const cr=core(r.title);return sub(cr,cp)||sub(cp,cr)});
+  const h=lastFromHistory(p[0]);
+  if(h){set('g_ld',h.e.date);const lo=document.getElementById('g_lo');if(h.e.odo)set('g_lo',h.e.odo);else if(lo&&lo.dataset.auto==='1')lo.value=''}
+  else{for(const id of ['g_ld','g_lo']){const el=document.getElementById(id);if(el&&el.dataset.auto==='1'){el.value='';}}}
+  if(hint)hint.innerHTML=(exists?`<span style="color:var(--warn)">Такая работа уже есть в графике: «${esc(exists.title)}».</span><br>`:'')+
+    (h?`Нашла в истории: ${fdate(h.e.date)}${h.e.odo?', '+km(h.e.odo):''} — ${esc(h.what)}. Если делали позже, поправьте дату и пробег.`:'В истории не нашла. Укажите, когда делали последний раз, или оставьте пустым.')+
+    `<br>Интервал — типовой, его можно поменять.`;
+}
 function regForm(r){
   const x=r||{title:'',icon:'wrench',everyKm:'',everyMonths:'',lastDate:'',lastOdo:'',note:''};
   const body=`<div class="form">${fld('g_title','Работа','placeholder="Замена масла в двигателе"',x.title)}
    <div class="f"><label>Значок</label><div class="grades" id="g_icons">${REG_ICONS.map(i=>`<button type="button" data-act="regicon" data-v="${i}" aria-pressed="${x.icon===i}" aria-label="${i}" style="padding:6px 8px">${ico(i).replace('<svg','<svg width="22" height="22"')}</button>`).join('')}</div></div>
+   ${r?'':`<div class="chips" id="g_var" style="flex-wrap:wrap"></div><div class="phint" id="g_hint">Нажмите значок — подставлю название, интервал и последнюю замену из истории.</div>`}
    <div class="row">${fld('g_km','Каждые, км','type="number" inputmode="numeric" min="0" placeholder="10000"',x.everyKm??'')}${fld('g_mon','И/или каждые, мес','type="number" inputmode="numeric" min="0" placeholder="12"',x.everyMonths??'')}</div>
    <div class="row">${fld('g_ld','Последний раз: дата','type="date"',x.lastDate||'')}${fld('g_lo','Пробег тогда, км','type="number" inputmode="numeric" min="0"',x.lastOdo??'')}</div>
    <div class="f"><label for="g_note">Комментарий</label><textarea id="g_note" rows="2" placeholder="какое масло, артикул фильтра">${esc(x.note||'')}</textarea></div>
@@ -1140,7 +1185,8 @@ document.addEventListener('click',ev=>{
     case 'delyes':L._del&&L._del();break;
     case 'delno':$('#delzone').innerHTML=`<button class="btn danger" data-act="del">${ico('trash')} Удалить</button>`;break;
     case 'grade':L._grade=v;document.querySelectorAll('#f_grades button').forEach(x=>x.setAttribute('aria-pressed',x.dataset.v===v));break;
-    case 'regicon':L._icon=v;document.querySelectorAll('#g_icons button').forEach(x=>x.setAttribute('aria-pressed',x.dataset.v===v));break;
+    case 'regicon':L._icon=v;document.querySelectorAll('#g_icons button').forEach(x=>x.setAttribute('aria-pressed',x.dataset.v===v));if($('#g_hint'))applyRegPreset(v,0);break;
+    case 'regvar':{L._icon=v;['g_title','g_km','g_mon','g_ld','g_lo'].forEach(i=>{const el=document.getElementById(i);if(el&&el.dataset.auto==='1')el.value=''});applyRegPreset(v,+b.dataset.i);break}
     case 'regpick':{const s=L._regsDone;if(s.has(id))s.delete(id);else s.add(id);b.setAttribute('aria-pressed',s.has(id));break}
     case 'addpart':$('#parts').insertAdjacentHTML('beforeend',partRow({}));$('#parts .part2:last-child .p_name').focus();break;
     case 'delpart':{const r=b.closest('.part2');if(document.querySelectorAll('#parts .part2').length>1)r.remove();else{r.querySelectorAll('input').forEach(i=>i.value='')}$('#f_total').textContent=nf.format(partsTotal());break}
@@ -1150,6 +1196,7 @@ document.addEventListener('input',ev=>{
   const t=ev.target;
   if(t.id==='hq'){UI.hq=t.value;const pos=t.selectionStart;render();const n=$('#hq');n.focus();try{n.setSelectionRange(pos,pos)}catch(e){}return}
   if(t.classList.contains('p_name')){clearTimeout(t._h);t._h=setTimeout(()=>{const w=t.closest('.part2');const h=w&&w.querySelector('.phint');if(h)h.innerHTML=/^Работа:/i.test(t.value)?'':partHintHtml(t.value)},250)}
+  if(['g_title','g_km','g_mon','g_ld','g_lo'].includes(t.id))t.dataset.auto='';
   if(t.id==='s_name'){clearTimeout(t._h);t._h=setTimeout(()=>{const h=$('#s_hint');if(h)h.innerHTML=partHintHtml(t.value)},250)}
   if(t.classList.contains('p_price')||t.id==='f_work'){const tt=$('#f_total');if(tt)tt.textContent=nf.format(partsTotal())}
   if(t.id==='f_l'||t.id==='f_p'){const l=num(val('f_l')),p=num(val('f_p'));if(l&&p)$('#f_cost').value=Math.round(l*p)}
