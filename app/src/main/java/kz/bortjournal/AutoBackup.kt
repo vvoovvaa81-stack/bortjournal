@@ -27,7 +27,12 @@ object AutoBackup {
                 if (c.moveToFirst()) name = c.getString(0) ?: name
             }
         } catch (e: Exception) { }
-        prefs(ctx).edit().putString("uri", uri.toString()).putString("name", name).remove("error").apply()
+        val persisted = try {
+            ctx.contentResolver.persistedUriPermissions.any { it.uri == uri && it.isWritePermission }
+        } catch (e: Exception) { false }
+        val ed = prefs(ctx).edit().putString("uri", uri.toString()).putString("name", name).remove("error")
+        if (!persisted) ed.putString("error", "NOPERSIST")
+        ed.apply()
     }
 
     fun disable(ctx: Context) {
@@ -71,6 +76,8 @@ object AutoBackup {
                 it.write(json.toByteArray(Charsets.UTF_8))
             } ?: throw IllegalStateException("нет доступа к файлу")
             prefs(ctx).edit().putLong("last", System.currentTimeMillis()).remove("error").apply()
+        } catch (e: SecurityException) {
+            prefs(ctx).edit().putString("error", "NOACCESS").apply()
         } catch (e: Exception) {
             prefs(ctx).edit().putString("error", e.message ?: e.javaClass.simpleName).apply()
         }

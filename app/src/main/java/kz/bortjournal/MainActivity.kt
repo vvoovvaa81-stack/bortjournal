@@ -3,6 +3,7 @@ package kz.bortjournal
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -49,7 +50,14 @@ class MainActivity : ComponentActivity() {
     private var pendingAction: String? = null
     private var pageReady = false
 
-    private val pickBackup = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+    // CreateDocument с флагами постоянного доступа: иначе Google Диск даёт доступ только до перезапуска
+    private val pickBackup = registerForActivityResult(object : ActivityResultContracts.CreateDocument("application/json") {
+        override fun createIntent(context: Context, input: String): Intent =
+            super.createIntent(context, input).addFlags(
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+            )
+    }) { uri ->
         if (uri != null) {
             AutoBackup.setUri(this, uri)
             AutoBackup.schedule(this, Storage.load(this), 0)
