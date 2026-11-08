@@ -176,6 +176,7 @@ nav.tabs button[aria-current="page"]{color:var(--accent)}
 .note{font-size:13px;color:var(--muted);background:var(--panel2);border-radius:10px;padding:10px 12px;line-height:1.45}
 .empty{text-align:center;padding:26px 16px;color:var(--muted)}
 .empty b{display:block;color:var(--fg);font:600 20px/1.2 var(--display);margin-bottom:6px}
+.toast-undo{margin-left:12px;border:0;background:none;color:var(--accent);font-weight:700;padding:2px 4px}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(90px + env(safe-area-inset-bottom,0px));z-index:60;background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:10px;font-weight:600;font-size:14px;max-width:90%;text-align:center}
 .store{font-size:12px;color:var(--muted);text-align:center}
 .confirm{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:color-mix(in srgb,var(--bad) 12%,transparent);border-radius:10px;padding:10px}
@@ -498,7 +499,13 @@ window.__back=function(){
 
 /* ---------- toast ---------- */
 let toastT;
-function toast(msg){let t=$('#toast');if(!t){t=document.createElement('div');t.id='toast';t.className='toast';t.setAttribute('role','status');document.body.appendChild(t)}t.textContent=msg;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,2800)}
+let undoSnap=null;
+function snap(){return JSON.stringify({events:S.events,regs:S.regs,stock:S.stock||[],cars:S.cars})}
+function toast(msg,undo){let t=$('#toast');if(!t){t=document.createElement('div');t.id='toast';t.className='toast';t.setAttribute('role','status');document.body.appendChild(t)}
+  t.innerHTML='';const sp=document.createElement('span');sp.textContent=msg;t.appendChild(sp);
+  undoSnap=undo||null;
+  if(undo){const b=document.createElement('button');b.className='toast-undo';b.dataset.act='undo';b.textContent='Отменить';t.appendChild(b)}
+  t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>{t.hidden=true;undoSnap=null},undo?10000:2800)}
 
 /* ---------- gauge svg ---------- */
 function gauge(frac,big){
@@ -764,7 +771,7 @@ function recordReg(r){
   closeSheet();
   evForm('service',null,{title:r.title,parts,regsDone:[r.id]});
 }
-function markRegDone(r){r.lastDate=today();r.lastOdo=curOdo();delete r.snooze;saveGarage();closeSheet();render();toast(`«${r.title}» отмечено. Запишите расходы через «+», если были.`)}
+function markRegDone(r){const u=snap();r.lastDate=today();r.lastOdo=curOdo();delete r.snooze;saveGarage();closeSheet();render();toast(`«${r.title}» отмечено`,u)}
 
 function viewStats(){
   const all=evs();const t=today();
@@ -871,6 +878,7 @@ const partRow=(p,exId)=>{const isWork=/^Работа:/i.test(p.name||'');return 
 function partsTotal(){let s=0;document.querySelectorAll('#parts .p_price').forEach(i=>s+=num(i.value)||0);return s+(num(val('f_work'))||0)}
 
 function saveEvent(type,ev){
+  const undoBefore=snap();
   const date=val('f_date')||today();const odo=num(val('f_odo'));
   const prevOdo=curOdo();
   const e=ev?{...ev}:{id:uid(),car:car().id,type};
@@ -900,7 +908,7 @@ function saveEvent(type,ev){
   closeSheet();
   const fired=odo!=null&&odo>prevOdo?alertsList().filter(a=>a.s.kmLeft!=null&&a.s.kmLeft<S.settings.warnKm):[];
   render();
-  toast(fired.length?`Сохранено. Внимание: ${fired[0].r.title}${fired.length>1?` и ещё ${fired.length-1}`:''}`:'Сохранено');
+  toast(fired.length?`Сохранено. Внимание: ${fired[0].r.title}${fired.length>1?` и ещё ${fired.length-1}`:''}`:'Сохранено',undoBefore);
 }
 
 /* пресеты работ по значку: [название, км, мес] */
@@ -1026,32 +1034,37 @@ function previewMerge(o){
   else{toast('Это не файл Бортжурнала');return}
   const mine=evs();const ids=new Set(mine.map(e=>e.importId).filter(Boolean));
   const sig=e=>[e.type,e.date,Math.round(e.cost||0),e.odo||''].join('|');const sigs=new Set(mine.map(sig));
-  const fresh=list.filter(e=>e&&e.date&&TYPES[e.type]&&!(e.importId&&ids.has(e.importId))&&!sigs.has(sig(e)));
+  const repSet=new Set(Array.isArray(o.replace)?o.replace:[]);
+  const keepMine=mine.filter(e=>!(e.importId&&repSet.has(e.importId)));const ids2=new Set(keepMine.map(e=>e.importId).filter(Boolean));const sigs2=new Set(keepMine.map(sig));
+  const fresh=list.filter(e=>e&&e.date&&TYPES[e.type]&&!(e.importId&&ids2.has(e.importId))&&!sigs2.has(sig(e)));
   const have=new Set((c.odoLog||[]).map(p=>p.d+'|'+p.o));
   const odoNew=(Array.isArray(o.odoLog)?o.odoLog:[]).filter(p=>p&&p.d&&p.o>0&&!have.has(p.d+'|'+p.o));
   const dup=list.length-fresh.length;
   const byT={};for(const e of fresh)byT[e.type]=(byT[e.type]||0)+1;
   const ys=fresh.map(e=>e.date.slice(0,4)).sort();
   const sum=fresh.reduce((s,e)=>s+(e.cost||0),0);
-  const regPlan=(Array.isArray(o.regs)?o.regs:[]).map(r=>{const ex=regs().find(x=>x.title.toLowerCase().includes((r.match||r.title).toLowerCase()));
-    const skip=ex&&ex.lastDate&&r.lastDate&&ex.lastDate>r.lastDate;return {r,ex,skip}}).filter(x=>!x.skip);
+  const regPlan=(Array.isArray(o.regs)?o.regs:[]).filter(r=>r.title||r.match).map(r=>{const ex=regs().find(x=>x.title.toLowerCase().includes((r.match||r.title).toLowerCase()));
+    const skip=(!ex&&!r.title)||(!r.force&&ex&&ex.lastDate&&r.lastDate&&ex.lastDate>r.lastDate);return {r,ex,skip}}).filter(x=>!x.skip);
+  const repIds=new Set(Array.isArray(o.replace)?o.replace:[]);const toRemove=mine.filter(e=>e.importId&&repIds.has(e.importId));
   const sids=new Set((S.stock||[]).map(x=>x.importId).filter(Boolean));
   const stockNew=(Array.isArray(o.stock)?o.stock:[]).filter(x=>x&&x.name&&!(x.importId&&sids.has(x.importId)));
-  $('#layer')._merge={o,fresh,odoNew,regPlan,stockNew};
+  $('#layer')._merge={o,fresh,odoNew,regPlan,stockNew,toRemove};
   openSheet('Добавить записи',`<div class="form">${o.title?`<p style="margin:0"><b>${esc(o.title)}</b></p>`:''}
    <div class="card pad" style="display:grid;gap:6px">
     <div>Новых записей: <b class="num" style="font-size:20px">${fresh.length}</b>${ys.length?` <span class="muted">(${ys[0]===ys[ys.length-1]?ys[0]:ys[0]+'–'+ys[ys.length-1]})</span>`:''}</div>
     ${fresh.length?`<div class="muted" style="font-size:13px">${Object.entries(byT).map(([k,n])=>TYPES[k].l+': '+n).join(' · ')}</div><div class="muted" style="font-size:13px">На сумму ${money(sum)}</div>`:''}
     ${odoNew.length?`<div class="muted" style="font-size:13px">Точек пробега: ${odoNew.length}</div>`:''}
+    ${toRemove.length?`<div class="muted" style="font-size:13px">Заменю старые записи: ${toRemove.map(e=>fdate(e.date)+' '+esc(evTitle(e)).slice(0,40)).join('; ')}</div>`:''}
     ${stockNew.length?`<div class="muted" style="font-size:13px">На склад: ${stockNew.map(x=>esc(x.name)).join(', ')}</div>`:''}
-    ${regPlan.length?`<div class="muted" style="font-size:13px">График ТО: ${regPlan.map(x=>esc(x.r.title)+(x.ex?'':' (новая)')).join(', ')}</div>`:''}
+    ${regPlan.length?`<div class="muted" style="font-size:13px">График ТО: ${regPlan.map(x=>esc(x.r.title||(x.ex&&x.ex.title)||'')+(x.ex?'':' (новая)')).join(', ')}</div>`:''}
     ${dup?`<div class="muted" style="font-size:13px">Уже есть в журнале, пропущу: ${dup}</div>`:''}
    </div>
    ${o.car&&Object.keys(o.car).some(k=>o.car[k]&&!c[k])?`<p class="note" style="margin:0">Заполню пустые поля машины: ${Object.keys(o.car).filter(k=>o.car[k]&&!c[k]).map(k=>({year:'год',engine:'двигатель',plate:'госномер',vin:'VIN',name:'название'})[k]||k).join(', ')}.</p>`:''}
-   <div style="display:flex;gap:8px"><button class="btn pri" data-act="mergeyes" ${fresh.length||odoNew.length||regPlan.length||stockNew.length?'':'disabled'}>${ico('check')} ${fresh.length?'Добавить '+fresh.length:'Применить'}</button><button class="btn" data-act="close">Отмена</button></div></div>`);
+   <div style="display:flex;gap:8px"><button class="btn pri" data-act="mergeyes" ${fresh.length||odoNew.length||regPlan.length||stockNew.length||toRemove.length?'':'disabled'}>${ico('check')} ${fresh.length?'Добавить '+fresh.length:'Применить'}</button><button class="btn" data-act="close">Отмена</button></div></div>`);
 }
 function applyMerge(){
-  const m=$('#layer')._merge;if(!m)return;const c=car();const years=new Set();let regHits=0;
+  const m=$('#layer')._merge;if(!m)return;const c=car();const years=new Set();let regHits=0;const undoBefore=snap();
+  if(m.toRemove&&m.toRemove.length){const rm=new Set(m.toRemove.map(e=>e.id));for(const e of m.toRemove)years.add(e.date.slice(0,4));S.events=S.events.filter(e=>!rm.has(e.id))}
   for(const src of m.fresh){
     const e=JSON.parse(JSON.stringify(src));const titles=e.regsDoneTitles||[];delete e.regsDoneTitles;
     e.id=uid();e.car=c.id;if(e.odo==null||e.odo==='')e.odo=null;e.cost=Math.round(e.cost||0);
@@ -1070,7 +1083,7 @@ function applyMerge(){
   }
   if(m.odoNew&&m.odoNew.length){c.odoLog=(c.odoLog||[]).concat(m.odoNew.map(p=>({d:p.d,o:Math.round(p.o)}))).sort((a,b)=>a.d<b.d?-1:1);if(c.odoLog.length>300)c.odoLog=c.odoLog.slice(-300)}
   saveGarage();saveYears(...years);closeSheet();UI.tab='hist';render();
-  toast(`Добавлено записей: ${m.fresh.length}${m.stockNew&&m.stockNew.length?`, на склад: ${m.stockNew.length}`:''}${m.odoNew&&m.odoNew.length?`, точек пробега: ${m.odoNew.length}`:''}${regHits?`, отмечено в графике ТО: ${regHits}`:''}`);
+  toast(`${m.toRemove&&m.toRemove.length?'Заменено: '+m.toRemove.length+'. ':''}Добавлено записей: ${m.fresh.length}${m.stockNew&&m.stockNew.length?`, на склад: ${m.stockNew.length}`:''}${m.odoNew&&m.odoNew.length?`, точек пробега: ${m.odoNew.length}`:''}${regHits?`, отмечено в графике ТО: ${regHits}`:''}`);
 }
 window.__action=function(a){if(a==='odo'&&car())odoForm()};
 
@@ -1175,6 +1188,7 @@ document.addEventListener('click',ev=>{
     case 'abnow':try{window.Android.autoBackupNow(JSON.stringify(S));setTimeout(settingsSheet,1500)}catch(e){}break;
     case 'ics':{if(!car())break;const r=buildIcs();if(!r.n){toast('Нет сроков: настройте график ТО или напоминания с датой');break}saveFile('bortjournal-calendar.ics',r.text,`В файле ${r.n} событий. Откройте его на телефоне, чтобы добавить в календарь`);break}
     case 'testnotif':try{window.Android.testNotify();toast('Отправлено. Если не пришло, разрешите уведомления для приложения.')}catch(e){}break;
+    case 'undo':{if(undoSnap){const o=JSON.parse(undoSnap);Object.assign(S,o);undoSnap=null;saveAll();closeSheet();render();const t=$('#toast');if(t)t.hidden=true;toast('Отменено')}break}
     case 'close':closeSheet();break;
     case 'sheetbg':if(ev.target===b)closeSheet();break;
     case 'save':L._save&&L._save();break;
