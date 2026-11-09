@@ -301,10 +301,32 @@ const rems=()=>{const c=car();return c?S.rems.filter(r=>r.car===c.id):[]};
 const stockAll=()=>{const c=car();S.stock=S.stock||[];return c?S.stock.filter(x=>x.car===c.id&&(x.qty??1)>0):[]};
 /* сопоставление деталей и работ ТО по словам */
 const GEN=new Set(['фильт','масло','жидко','замен','перед','задни','задня','компл','прове','части','ремен','элеме','набор','для','oil','new','шт','левый','правы','левая','права']);
-const SYN={'мотор':'двига','двс':'двига','atf':'акпп','акп':'акпп','антиф':'охлаж','тосол':'охлаж','свеча':'свечи','акб':'аккум','кабин':'салон','ступи':'ступи'};
+const SYN={'масла':'масло','ремня':'ремен','свече':'свечи','диски':'диск','диско':'диск','диска':'диск','колод':'колод','мотор':'двига','двс':'двига','atf':'акпп','акп':'акпп','антиф':'охлаж','тосол':'охлаж','свеча':'свечи','акб':'аккум','кабин':'салон','ступи':'ступи'};
 function stems(t){return String(t||'').toLowerCase().replace(/ё/g,'е').split(/[^a-zа-я0-9]+/).filter(w=>w.length>=3).map(w=>{const k=w.slice(0,5);return SYN[k]||SYN[w]||k})}
 function simScore(a,b){const A=new Set(stems(a)),B=new Set(stems(b));let ng=0,g=0;for(const x of A)if(B.has(x)){if(GEN.has(x))g++;else ng++}return ng?ng*10+g:0}
 function regForItem(it){if(it.regId===false)return null;if(it.regId){const r=S.regs.find(x=>x.id===it.regId);if(r)return r}let best=null,bs=0;for(const r of regs()){const sc=simScore(it.name,r.title);if(sc>bs){bs=sc;best=r}}return best}
+function looseScore(a,b){const sa=side(a),sb=side(b);if(sa&&sb&&sa!==sb)return 0;const A=new Set(stems(a)),B=new Set(stems(b));let n=0;for(const x of A)if(B.has(x)&&!['замен','прове','части'].includes(x))n++;return n}
+function regTargets(spec){
+  const R=regs();const key=spec.match||spec.title||'';
+  if(spec.create){const t=(spec.title||'').toLowerCase();return R.filter(r=>r.title.toLowerCase()===t)}
+  if(spec.icon){
+    const C=R.filter(r=>r.icon===spec.icon);
+    if(C.length){
+      if((REG_PRESETS[spec.icon]||[]).length<=1)return C;
+      const sc=C.map(r=>[r,looseScore(r.title,key)]);const mx=Math.max(...sc.map(x=>x[1]));
+      return mx>0?sc.filter(x=>x[1]===mx).map(x=>x[0]):[];
+    }
+  }
+  if(!key)return [];
+  const sub=R.filter(r=>r.title.toLowerCase().includes(key.toLowerCase()));if(sub.length)return sub;
+  const sc=R.map(r=>[r,simScore(r.title,key)]).filter(x=>x[1]>=10);if(!sc.length)return [];
+  const mx=Math.max(...sc.map(x=>x[1]));return sc.filter(x=>x[1]===mx).map(x=>x[0]);
+}
+function stockFind(k){
+  const A=stockAll();if(typeof k==='string'){const a=A.find(x=>x.importId===k)||A.find(x=>x.name===k);if(a)return a;k={match:k}}
+  const key=k.match||'';const hk=stems(key)[0];
+  return A.find(x=>{const st=stems(x.name);return st[0]===hk&&simScore(x.name,key)>=10})||null;
+}
 function stockFor(r){return stockAll().filter(it=>{const m=regForItem(it);return m&&m.id===r.id})}
 function stockLabel(it){return [it.name,it.brand].filter(Boolean).join(' ')+(it.place?' · '+it.place:'')+(it.ordered?' (заказано)':'')}
 function stockHint(r){const L=stockFor(r);return L.length?`<div class="stockhint">${ico('box')}<span>На складе: ${L.map(i=>esc(stockLabel(i))).join('; ')}</span></div>`:''}
@@ -1043,12 +1065,15 @@ function previewMerge(o){
   const byT={};for(const e of fresh)byT[e.type]=(byT[e.type]||0)+1;
   const ys=fresh.map(e=>e.date.slice(0,4)).sort();
   const sum=fresh.reduce((s,e)=>s+(e.cost||0),0);
-  const regPlan=(Array.isArray(o.regs)?o.regs:[]).filter(r=>r.title||r.match).map(r=>{const ex=regs().find(x=>x.title.toLowerCase().includes((r.match||r.title).toLowerCase()));
-    const skip=(!ex&&!r.title)||(!r.force&&ex&&ex.lastDate&&r.lastDate&&ex.lastDate>r.lastDate);return {r,ex,skip}}).filter(x=>!x.skip);
+  const regPlan=[];for(const r of (Array.isArray(o.regs)?o.regs:[]).filter(r=>r.title||r.match||r.icon)){
+    const T=regTargets(r);
+    if(!T.length){if(r.title)regPlan.push({r,ex:null});continue}
+    for(const ex of T){if(!r.force&&ex.lastDate&&r.lastDate&&ex.lastDate>r.lastDate)continue;regPlan.push({r,ex})}
+  }
   const repIds=new Set(Array.isArray(o.replace)?o.replace:[]);const toRemove=mine.filter(e=>e.importId&&repIds.has(e.importId));
   const sids=new Set((S.stock||[]).map(x=>x.importId).filter(Boolean));
   const stockNew=(Array.isArray(o.stock)?o.stock:[]).filter(x=>x&&x.name&&!(x.importId&&sids.has(x.importId)));
-  const stUse=(Array.isArray(o.stockUse)?o.stockUse:[]).map(k=>stockAll().find(x=>x.importId===k)||stockAll().find(x=>x.name===k)).filter(Boolean);
+  const stUse=[];for(const k of (Array.isArray(o.stockUse)?o.stockUse:[])){const it=stockFind(k);if(it&&!stUse.includes(it))stUse.push(it)}
   $('#layer')._merge={o,fresh,odoNew,regPlan,stockNew,toRemove,stUse};
   openSheet('Добавить записи',`<div class="form">${o.title?`<p style="margin:0"><b>${esc(o.title)}</b></p>`:''}
    <div class="card pad" style="display:grid;gap:6px">
@@ -1073,7 +1098,8 @@ function applyMerge(){
     if(e.type==='fuel'&&!e.fuel)e.fuel={grade:'АИ-95',liters:0,price:null,full:false,missed:false};
     S.events.push(e);years.add(e.date.slice(0,4));
     if(titles.length){const odo=e.odo??(daysBetween(e.date,today())<=14?curOdo():null);
-      for(const r of S.regs.filter(r=>r.car===c.id&&titles.some(t=>r.title.toLowerCase().includes(t.toLowerCase())))){
+      const TT=new Set();for(const t of titles)for(const r of regTargets(typeof t==='string'?{match:t}:t))TT.add(r);
+      for(const r of TT){
         if(!r.lastDate||e.date>=r.lastDate){r.lastDate=e.date;if(odo!=null)r.lastOdo=odo;regHits++;(e.regsDone=e.regsDone||[]).push(r.id)}}}
   }
   if(m.o.car)for(const k of ['year','engine','plate','vin'])if(m.o.car[k]&&!c[k])c[k]=m.o.car[k];
@@ -1081,7 +1107,7 @@ function applyMerge(){
   for(const x of (m.stockNew||[])){const it=Object.assign({},x,{id:uid(),car:c.id});S.stock.push(it)}
   for(const {r,ex} of (m.regPlan||[])){
     const t=ex||{id:uid(),car:c.id,icon:r.icon||'wrench'};
-    for(const k of ['title','icon','everyKm','everyMonths','lastDate','lastOdo','note'])if(r[k]!==undefined)t[k]=r[k];if(r.lastDate)delete t.snooze;
+    for(const k of ['everyKm','everyMonths','lastDate','lastOdo','note'])if(r[k]!==undefined)t[k]=r[k];if(!ex){t.title=r.title;t.icon=r.icon||'wrench'}else if(r.rename)t.title=r.title;if(r.lastDate)delete t.snooze;
     if(!ex)S.regs.push(t);regHits++;
   }
   if(m.odoNew&&m.odoNew.length){c.odoLog=(c.odoLog||[]).concat(m.odoNew.map(p=>({d:p.d,o:Math.round(p.o)}))).sort((a,b)=>a.d<b.d?-1:1);if(c.odoLog.length>300)c.odoLog=c.odoLog.slice(-300)}
