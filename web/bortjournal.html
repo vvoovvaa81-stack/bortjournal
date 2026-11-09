@@ -1048,19 +1048,21 @@ function previewMerge(o){
   const repIds=new Set(Array.isArray(o.replace)?o.replace:[]);const toRemove=mine.filter(e=>e.importId&&repIds.has(e.importId));
   const sids=new Set((S.stock||[]).map(x=>x.importId).filter(Boolean));
   const stockNew=(Array.isArray(o.stock)?o.stock:[]).filter(x=>x&&x.name&&!(x.importId&&sids.has(x.importId)));
-  $('#layer')._merge={o,fresh,odoNew,regPlan,stockNew,toRemove};
+  const stUse=(Array.isArray(o.stockUse)?o.stockUse:[]).map(k=>stockAll().find(x=>x.importId===k)||stockAll().find(x=>x.name===k)).filter(Boolean);
+  $('#layer')._merge={o,fresh,odoNew,regPlan,stockNew,toRemove,stUse};
   openSheet('Добавить записи',`<div class="form">${o.title?`<p style="margin:0"><b>${esc(o.title)}</b></p>`:''}
    <div class="card pad" style="display:grid;gap:6px">
     <div>Новых записей: <b class="num" style="font-size:20px">${fresh.length}</b>${ys.length?` <span class="muted">(${ys[0]===ys[ys.length-1]?ys[0]:ys[0]+'–'+ys[ys.length-1]})</span>`:''}</div>
     ${fresh.length?`<div class="muted" style="font-size:13px">${Object.entries(byT).map(([k,n])=>TYPES[k].l+': '+n).join(' · ')}</div><div class="muted" style="font-size:13px">На сумму ${money(sum)}</div>`:''}
     ${odoNew.length?`<div class="muted" style="font-size:13px">Точек пробега: ${odoNew.length}</div>`:''}
     ${toRemove.length?`<div class="muted" style="font-size:13px">Заменю старые записи: ${toRemove.map(e=>fdate(e.date)+' '+esc(evTitle(e)).slice(0,40)).join('; ')}</div>`:''}
+    ${stUse.length?`<div class="muted" style="font-size:13px">Спишу со склада: ${stUse.map(x=>esc(x.name)).join(', ')}</div>`:''}
     ${stockNew.length?`<div class="muted" style="font-size:13px">На склад: ${stockNew.map(x=>esc(x.name)).join(', ')}</div>`:''}
     ${regPlan.length?`<div class="muted" style="font-size:13px">График ТО: ${regPlan.map(x=>esc(x.r.title||(x.ex&&x.ex.title)||'')+(x.ex?'':' (новая)')).join(', ')}</div>`:''}
     ${dup?`<div class="muted" style="font-size:13px">Уже есть в журнале, пропущу: ${dup}</div>`:''}
    </div>
    ${o.car&&Object.keys(o.car).some(k=>o.car[k]&&!c[k])?`<p class="note" style="margin:0">Заполню пустые поля машины: ${Object.keys(o.car).filter(k=>o.car[k]&&!c[k]).map(k=>({year:'год',engine:'двигатель',plate:'госномер',vin:'VIN',name:'название'})[k]||k).join(', ')}.</p>`:''}
-   <div style="display:flex;gap:8px"><button class="btn pri" data-act="mergeyes" ${fresh.length||odoNew.length||regPlan.length||stockNew.length||toRemove.length?'':'disabled'}>${ico('check')} ${fresh.length?'Добавить '+fresh.length:'Применить'}</button><button class="btn" data-act="close">Отмена</button></div></div>`);
+   <div style="display:flex;gap:8px"><button class="btn pri" data-act="mergeyes" ${fresh.length||odoNew.length||regPlan.length||stockNew.length||toRemove.length||stUse.length?'':'disabled'}>${ico('check')} ${fresh.length?'Добавить '+fresh.length:'Применить'}</button><button class="btn" data-act="close">Отмена</button></div></div>`);
 }
 function applyMerge(){
   const m=$('#layer')._merge;if(!m)return;const c=car();const years=new Set();let regHits=0;const undoBefore=snap();
@@ -1075,7 +1077,8 @@ function applyMerge(){
         if(!r.lastDate||e.date>=r.lastDate){r.lastDate=e.date;if(odo!=null)r.lastOdo=odo;regHits++;(e.regsDone=e.regsDone||[]).push(r.id)}}}
   }
   if(m.o.car)for(const k of ['year','engine','plate','vin'])if(m.o.car[k]&&!c[k])c[k]=m.o.car[k];
-  S.stock=S.stock||[];for(const x of (m.stockNew||[])){const it=Object.assign({},x,{id:uid(),car:c.id});S.stock.push(it)}
+  S.stock=S.stock||[];for(const it of (m.stUse||[]))consumeStock(it.id);
+  for(const x of (m.stockNew||[])){const it=Object.assign({},x,{id:uid(),car:c.id});S.stock.push(it)}
   for(const {r,ex} of (m.regPlan||[])){
     const t=ex||{id:uid(),car:c.id,icon:r.icon||'wrench'};
     for(const k of ['title','icon','everyKm','everyMonths','lastDate','lastOdo','note'])if(r[k]!==undefined)t[k]=r[k];if(r.lastDate)delete t.snooze;
