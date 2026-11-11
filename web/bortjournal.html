@@ -308,7 +308,12 @@ function regForItem(it){if(it.regId===false)return null;if(it.regId){const r=S.r
 function looseScore(a,b){const sa=side(a),sb=side(b);if(sa&&sb&&sa!==sb)return 0;const A=new Set(stems(a)),B=new Set(stems(b));let n=0;for(const x of A)if(B.has(x)&&!['замен','прове','части'].includes(x))n++;return n}
 function regTargets(spec){
   const R=regs();const key=spec.match||spec.title||'';
-  if(spec.create){const t=(spec.title||'').toLowerCase();return R.filter(r=>r.title.toLowerCase()===t)}
+  if(spec.create){const t=(spec.title||'').toLowerCase();const ex=R.filter(r=>r.title.toLowerCase()===t);if(ex.length)return ex;
+    if(spec.icon){const P=REG_PRESETS[spec.icon]||[];const C=R.filter(r=>r.icon===spec.icon);
+      if(C.length&&P.length===1)return C;
+      if(C.length&&P.length>1){const core=(a,b)=>{const sa=side(a),sb=side(b);if(sa&&sb&&sa!==sb)return 0;const B=new Set(stems(b));return stems(a).filter(x=>B.has(x)&&!GEN.has(x)).length};
+        const sc=C.map(r=>[r,core(r.title,spec.title||'')]);const mx=Math.max(...sc.map(x=>x[1]));if(mx>0)return sc.filter(x=>x[1]===mx).map(x=>x[0])}}
+    return []}
   if(spec.icon){
     const C=R.filter(r=>r.icon===spec.icon);
     if(C.length){
