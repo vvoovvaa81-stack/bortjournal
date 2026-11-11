@@ -210,7 +210,11 @@ const P={
  belt:'<circle cx="7" cy="12" r="4"/><circle cx="17" cy="8" r="3"/><path d="M7 8l10-3M7 16l10-5"/>',
  brake:'<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2.5"/><path d="M4.5 9A8 8 0 0 1 9 4.5"/>',
  coolant:'<path d="M12 3v10"/><path d="M12 3h4M12 6h3M12 9h4"/><circle cx="12" cy="16" r="3"/><path d="M4 20c1.5-1 3-1 4.5 0s3 1 4.5 0 3-1 4.5 0"/>',
- atf:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/>',
+ atf:'<circle cx="5" cy="5" r="1.6"/><circle cx="12" cy="5" r="1.6"/><circle cx="19" cy="5" r="1.6"/><circle cx="5" cy="19" r="1.6"/><circle cx="12" cy="19" r="1.6"/><path d="M5 6.6v10.8M12 6.6v10.8M19 6.6V12H5"/>',
+ steer:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/><path d="M3.5 10.5H10M14 10.5h6.5M12 14v7"/>',
+ bfluid:'<circle cx="12" cy="12" r="9"/><path d="M12 6.5s3.5 3.8 3.5 6.5a3.5 3.5 0 0 1-7 0c0-2.7 3.5-6.5 3.5-6.5z"/>',
+ shock:'<path d="M12 2v3M12 20v2"/><rect x="9" y="14" width="6" height="6" rx="1"/><path d="M8 5h8M9 5.5l6 1.7-6 1.7 6 1.7-6 1.7"/>',
+ ac:'<path d="M12 2v20M3.3 7l17.4 10M3.3 17L20.7 7"/><path d="M9.5 3.5 12 5l2.5-1.5M9.5 20.5 12 19l2.5 1.5"/>',
  battery:'<rect x="3" y="7" width="18" height="12" rx="2"/><path d="M7 7V5h3v2M14 7V5h3v2M6.5 13h3M15 11.5v3M13.5 13h3"/>',
  tyre:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2"/>',
  align:'<path d="M5 4l3 16M19 4l-3 16"/><path d="M4 12h16"/><path d="M10 8l2-2 2 2"/>',
@@ -275,7 +279,37 @@ const TYPES={
 };
 const OTHER_SUB=['Страховка','Шиномонтаж','Техосмотр','Налог','Стоянка','Штраф','Запчасти впрок','Эвакуатор','Кредит','Прочее'];
 const GRADES=['АИ-92','АИ-95','АИ-98','Газ','ДТ'];
-const REG_ICONS=['oil','filter','cabin','plug','belt','brake','coolant','atf','battery','tyre','align','fluid','wrench'];
+const REG_ICONS=['oil','filter','cabin','plug','belt','coolant','atf','brake','bfluid','steer','align','shock','tyre','battery','ac','fluid','wrench'];
+/* каталог работ ТО: группа, название, значок, км, мес */
+const WORKS=[
+ ['Двигатель','Замена масла и масляного фильтра','oil',10000,12],
+ ['Двигатель','Замена воздушного фильтра','filter',20000,24],
+ ['Двигатель','Замена топливного фильтра','filter',60000,null],
+ ['Двигатель','Замена свечей зажигания','plug',30000,null],
+ ['Двигатель','Замена ремня ГРМ, роликов и помпы','belt',60000,60],
+ ['Двигатель','Замена ремня навесного оборудования (генератора)','belt',60000,48],
+ ['Двигатель','Замена охлаждающей жидкости','coolant',60000,48],
+ ['АКПП','Замена масла АКПП (частичная)','atf',40000,36],
+ ['Тормоза','Замена тормозной жидкости','bfluid',60000,24],
+ ['Тормоза','Замена передних тормозных колодок','brake',30000,24],
+ ['Тормоза','Замена задних тормозных колодок','brake',50000,36],
+ ['Тормоза','Замена передних тормозных дисков','brake',60000,null],
+ ['Тормоза','Замена задних тормозных дисков','brake',80000,null],
+ ['Тормоза','Проверка тормозных колодок','brake',15000,12],
+ ['Рулевое','Замена жидкости гидроусилителя руля (ЭГУР)','steer',60000,48],
+ ['Рулевое','Развал-схождение','align',15000,12],
+ ['Ходовая','Проверка ходовой: стойки и втулки стабилизатора','shock',15000,6],
+ ['Шины','Сезонная замена шин','tyre',null,6],
+ ['Шины','Проверка износа и давления шин','tyre',10000,6],
+ ['Электрика','Замена аккумулятора','battery',null,60],
+ ['Электрика','Проверка аккумулятора и генератора','battery',null,12],
+ ['Салон','Замена салонного фильтра','cabin',15000,12],
+ ['Салон','Обслуживание кондиционера','ac',null,24]
+];
+function fixIcon(r){if(!r)return r;const t=String((r.title||'')+' '+(r.match||'')).toLowerCase();
+  if(r.icon==='fluid'){if(/гур|гидроус/.test(t))r.icon='steer';else if(/тормоз/.test(t))r.icon='bfluid'}
+  else if(r.icon==='wrench'&&/стойк|стабилиз|ходов|амортиз/.test(t))r.icon='shock';
+  return r}
 const REG_TEMPLATE=[
  ['Масло двигателя и масляный фильтр','oil',10000,12],
  ['Воздушный фильтр','filter',20000,24],
@@ -287,7 +321,7 @@ const REG_TEMPLATE=[
  ['Масло АКПП (частичная замена)','atf',40000,null],
  ['Аккумуляторная батарея','battery',null,60],
  ['Развал-схождение','align',15000,12],
- ['Тормозная жидкость','fluid',60000,24],
+ ['Тормозная жидкость','bfluid',60000,24],
  ['Топливный фильтр','filter',60000,null]
 ];
 
@@ -296,18 +330,18 @@ let UI={tab:'home',toSeg:'regs',hType:'all',hq:'',statRange:'12'};
 
 const car=()=>S.cars.find(c=>c.id===S.car)||S.cars[0]||null;
 const evs=()=>{const c=car();return c?S.events.filter(e=>e.car===c.id):[]};
-const regs=()=>{const c=car();return c?S.regs.filter(r=>r.car===c.id):[]};
+const regs=()=>{const c=car();return c?S.regs.filter(r=>r.car===c.id).map(fixIcon):[]};
 const rems=()=>{const c=car();return c?S.rems.filter(r=>r.car===c.id):[]};
 const stockAll=()=>{const c=car();S.stock=S.stock||[];return c?S.stock.filter(x=>x.car===c.id&&(x.qty??1)>0):[]};
 /* сопоставление деталей и работ ТО по словам */
 const GEN=new Set(['фильт','масло','жидко','замен','перед','задни','задня','компл','прове','части','ремен','элеме','набор','для','oil','new','шт','левый','правы','левая','права']);
-const SYN={'масла':'масло','ремня':'ремен','свече':'свечи','диски':'диск','диско':'диск','диска':'диск','колод':'колод','мотор':'двига','двс':'двига','atf':'акпп','акп':'акпп','антиф':'охлаж','тосол':'охлаж','свеча':'свечи','акб':'аккум','кабин':'салон','ступи':'ступи'};
+const SYN={'эгур':'гур','масла':'масло','ремня':'ремен','свече':'свечи','диски':'диск','диско':'диск','диска':'диск','колод':'колод','мотор':'двига','двс':'двига','atf':'акпп','акп':'акпп','антиф':'охлаж','тосол':'охлаж','свеча':'свечи','акб':'аккум','кабин':'салон','ступи':'ступи'};
 function stems(t){return String(t||'').toLowerCase().replace(/ё/g,'е').split(/[^a-zа-я0-9]+/).filter(w=>w.length>=3).map(w=>{const k=w.slice(0,5);return SYN[k]||SYN[w]||k})}
 function simScore(a,b){const A=new Set(stems(a)),B=new Set(stems(b));let ng=0,g=0;for(const x of A)if(B.has(x)){if(GEN.has(x))g++;else ng++}return ng?ng*10+g:0}
 function regForItem(it){if(it.regId===false)return null;if(it.regId){const r=S.regs.find(x=>x.id===it.regId);if(r)return r}let best=null,bs=0;for(const r of regs()){const sc=simScore(it.name,r.title);if(sc>bs){bs=sc;best=r}}return best}
 function looseScore(a,b){const sa=side(a),sb=side(b);if(sa&&sb&&sa!==sb)return 0;const A=new Set(stems(a)),B=new Set(stems(b));let n=0;for(const x of A)if(B.has(x)&&!['замен','прове','части'].includes(x))n++;return n}
 function regTargets(spec){
-  const R=regs();const key=spec.match||spec.title||'';
+  fixIcon(spec);const R=regs();const key=spec.match||spec.title||'';
   if(spec.create){const t=(spec.title||'').toLowerCase();const ex=R.filter(r=>r.title.toLowerCase()===t);if(ex.length)return ex;
     if(spec.icon){const P=REG_PRESETS[spec.icon]||[];const C=R.filter(r=>r.icon===spec.icon);
       if(C.length&&P.length===1)return C;
@@ -939,21 +973,7 @@ function saveEvent(type,ev){
 }
 
 /* пресеты работ по значку: [название, км, мес] */
-const REG_PRESETS={
- oil:[['Замена масла и масляного фильтра',10000,12]],
- filter:[['Замена воздушного фильтра',20000,24],['Замена топливного фильтра',60000,null]],
- cabin:[['Замена салонного фильтра',15000,12]],
- plug:[['Замена свечей зажигания',30000,null]],
- belt:[['Замена ремня ГРМ, роликов и помпы',60000,60],['Замена ремня навесного оборудования (генератора)',60000,48]],
- brake:[['Замена передних тормозных колодок',30000,24],['Замена задних тормозных колодок',50000,36],['Замена передних тормозных дисков',60000,null],['Замена задних тормозных дисков',80000,null]],
- coolant:[['Замена охлаждающей жидкости',60000,48]],
- atf:[['Замена масла АКПП (частичная)',40000,36]],
- battery:[['Замена аккумулятора',null,60]],
- tyre:[['Проверка износа и давления шин',10000,6]],
- align:[['Развал-схождение',15000,12]],
- fluid:[['Замена тормозной жидкости',60000,24],['Замена жидкости ГУР/ЭГУР',60000,48]],
- wrench:[]
-};
+const REG_PRESETS=(()=>{const o={};for(const i of REG_ICONS)o[i]=[];for(const [g,t,i,k,m] of WORKS)o[i].push([t,k,m]);return o})();
 function lastFromHistory(title){
   const rs=stems(title);let best=null;
   const ok=name=>{const st=stems(name);const head=st[0];if(!head)return false;if(!rs.includes(head)&&!(GEN.has(head)&&st.some(x=>!GEN.has(x)&&rs.includes(x))))return false;
@@ -982,11 +1002,32 @@ function applyRegPreset(icon,idx){
     (h?`Нашла в истории: ${fdate(h.e.date)}${h.e.odo?', '+km(h.e.odo):''} — ${esc(h.what)}. Если делали позже, поправьте дату и пробег.`:'В истории не нашла. Укажите, когда делали последний раз, или оставьте пустым.')+
     `<br>Интервал — типовой, его можно поменять.`;
 }
+function regCore(t){const CX=['замен','прове','части','износ','давле','перед','задни','задня'];return new Set(stems(t).filter(x=>!CX.includes(x)))}
+function sameWork(a,b,ia,ib){if(ia&&ib&&ia!==ib&&!['wrench','fluid'].includes(ia)&&!['wrench','fluid'].includes(ib))return false;
+  const chk=t=>/провер/i.test(t);if(chk(a)!==chk(b))return false;if(side(a)!==side(b))return false;
+  const A=regCore(a),B=regCore(b);if(!A.size||!B.size)return false;const n=[...A].filter(x=>B.has(x)).length;
+  return n===Math.min(A.size,B.size)||(n>=2&&n>=Math.min(A.size,B.size)-1)}
+function regExists(title,exceptId,icon){return regs().find(r=>r.id!==exceptId&&sameWork(r.title,title,r.icon,icon))||null}
+function workOptions(exceptId){const g={};WORKS.forEach((w,i)=>{(g[w[0]]=g[w[0]]||[]).push(i)});
+  return Object.keys(g).map(k=>`<optgroup label="${esc(k)}">${g[k].map(i=>{const ex=regExists(WORKS[i][1],exceptId,WORKS[i][2]);return `<option value="${i}" ${ex?'disabled':''}>${esc(WORKS[i][1])}${ex?' — уже есть':''}</option>`}).join('')}</optgroup>`).join('')}
+function applyWork(i){
+  const w=WORKS[i];if(!w)return;const [g,t,icon,k,m]=w;const L=$('#layer');
+  const put=(id,v)=>{const el=document.getElementById(id);if(el){el.value=v??'';el.dataset.auto='1'}};
+  put('g_title',t);put('g_km',k);put('g_mon',m);
+  L._icon=icon;document.querySelectorAll('#g_icons button').forEach(x=>x.setAttribute('aria-pressed',x.dataset.v===icon));
+  const v=$('#g_var');if(v)v.innerHTML='';
+  const h=lastFromHistory(t);
+  const soft=(id,val)=>{const el=document.getElementById(id);if(el&&(!el.value||el.dataset.auto==='1')){el.value=val??'';el.dataset.auto='1'}};
+  if(h){soft('g_ld',h.e.date);if(h.e.odo)soft('g_lo',h.e.odo)}
+  const hint=$('#g_hint');
+  if(hint)hint.innerHTML=(h?`Нашла в истории: ${fdate(h.e.date)}${h.e.odo?', '+km(h.e.odo):''} — ${esc(h.what)}. Если делали позже, поправьте дату и пробег.`:'В истории не нашла. Укажите, когда делали последний раз, или оставьте пустым.')+`<br>Интервал — типовой, его можно поменять.`;
+}
 function regForm(r){
   const x=r||{title:'',icon:'wrench',everyKm:'',everyMonths:'',lastDate:'',lastOdo:'',note:''};
-  const body=`<div class="form">${fld('g_title','Работа','placeholder="Замена масла в двигателе"',x.title)}
+  const body=`<div class="form"><div class="f"><label for="g_pick">Выбрать из списка</label><select id="g_pick"><option value="">${r?'— заменить на работу из списка —':'— выберите работу —'}</option>${workOptions(r&&r.id)}</select></div>
+   ${fld('g_title',r?'Работа':'Или своё название','placeholder="Своя работа"',x.title)}
    <div class="f"><label>Значок</label><div class="grades" id="g_icons">${REG_ICONS.map(i=>`<button type="button" data-act="regicon" data-v="${i}" aria-pressed="${x.icon===i}" aria-label="${i}" style="padding:6px 8px">${ico(i).replace('<svg','<svg width="22" height="22"')}</button>`).join('')}</div></div>
-   ${r?'':`<div class="chips" id="g_var" style="flex-wrap:wrap"></div><div class="phint" id="g_hint">Нажмите значок — подставлю название, интервал и последнюю замену из истории.</div>`}
+   ${r?'':`<div class="chips" id="g_var" style="flex-wrap:wrap"></div><div class="phint" id="g_hint">Выберите работу из списка — подставлю значок, интервал и последнюю замену из истории. Для своей работы впишите название и нажмите значок.</div>`}
    <div class="row">${fld('g_km','Каждые, км','type="number" inputmode="numeric" min="0" placeholder="10000"',x.everyKm??'')}${fld('g_mon','И/или каждые, мес','type="number" inputmode="numeric" min="0" placeholder="12"',x.everyMonths??'')}</div>
    <div class="row">${fld('g_ld','Последний раз: дата','type="date"',x.lastDate||'')}${fld('g_lo','Пробег тогда, км','type="number" inputmode="numeric" min="0"',x.lastOdo??'')}</div>
    <div class="f"><label for="g_note">Комментарий</label><textarea id="g_note" rows="2" placeholder="какое масло, артикул фильтра">${esc(x.note||'')}</textarea></div>
@@ -1248,7 +1289,7 @@ document.addEventListener('input',ev=>{
   if(t.id==='f_cost'){const l=num(val('f_l')),c=num(val('f_cost'));if(l&&c&&!num(val('f_p')))$('#f_p').value=(c/l).toFixed(1)}
 });
 document.addEventListener('keydown',ev=>{if(ev.key==='Escape'){if($('#layer').innerHTML)closeSheet();else closeDial()}});
-document.addEventListener('change',ev=>{if(ev.target.id==='s_odom'){S.settings.odoMonthly=ev.target.checked;saveGarage();toast(ev.target.checked?'Буду спрашивать пробег раз в месяц':'Не буду спрашивать пробег')}});
+document.addEventListener('change',ev=>{if(ev.target.id==='g_pick'&&ev.target.value!==''){applyWork(+ev.target.value);return}if(ev.target.id==='s_odom'){S.settings.odoMonthly=ev.target.checked;saveGarage();toast(ev.target.checked?'Буду спрашивать пробег раз в месяц':'Не буду спрашивать пробег')}});
 $('#mergeFile').addEventListener('change',async ev=>{
   const f=ev.target.files[0];ev.target.value='';if(!f)return;
   try{previewMerge(JSON.parse(await f.text()))}catch(e){toast('Не удалось прочитать файл')}
