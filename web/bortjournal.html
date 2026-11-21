@@ -160,6 +160,7 @@ nav.tabs button[aria-current="page"]{color:var(--accent)}
 .sheet-h h3{flex:1;margin:0;font:600 21px/1.1 var(--display)}
 .form{display:flex;flex-direction:column;gap:12px;padding-block:14px}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}.row3 input{min-width:0}
 .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
 .f label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:500}
 .f input,.f select,.f textarea{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 11px;min-width:0}
@@ -892,6 +893,7 @@ function closeSheet(){$('#layer').innerHTML='';}
 const fld=(id,label,attrs='',val='')=>`<div class="f"><label for="${id}">${label}</label><input id="${id}" ${attrs} value="${esc(val)}"></div>`;
 const val=id=>{const e=document.getElementById(id);return e?e.value.trim():''};
 
+function lastPrice(g){const f=S.events.filter(x=>x.type==='fuel'&&x.fuel&&x.fuel.price&&(!g||x.fuel.grade===g)).sort((a,b)=>a.date<b.date?1:-1)[0];return f?f.fuel.price:null}
 function evForm(type,ev,preset){
   const e=ev||Object.assign({type,date:today(),odo:curOdo()||'',cost:''},preset||{});
   type=e.type;
@@ -900,14 +902,14 @@ function evForm(type,ev,preset){
   if(type==='fuel'){
     const f=e.fuel||{grade:(c&&c.grade)||'АИ-95',liters:'',price:'',full:true,missed:false};
     body+=`<div class="f"><label>Топливо</label><div class="grades" id="f_grades">${GRADES.map(g=>`<button type="button" data-act="grade" data-v="${g}" aria-pressed="${f.grade===g}">${g}</button>`).join('')}</div></div>
-     <div class="row">${fld('f_cost','Сумма, ₸','type="number" inputmode="decimal" min="0"',e.cost??'')}${fld('f_l','Литров (можно пропустить)','type="number" inputmode="decimal" step="0.01" min="0"',f.liters??'')}</div>
+     <div class="row3">${fld('f_cost','Сумма, ₸','type="number" inputmode="decimal" min="0"',e.cost??'')}${fld('f_l','Литры','type="number" inputmode="decimal" step="0.01" min="0"',f.liters||'')}${fld('f_p','₸ за литр','type="number" inputmode="decimal" step="0.01" min="0"'+(lastPrice(f.grade)?` placeholder="${lastPrice(f.grade)}"`:''),f.price??'')}</div>
+     <p class="note" style="margin:0">Введите любые два — третье посчитаю. Литры нужны для расчёта расхода.</p>
      <label class="check"><input type="checkbox" id="f_full" ${f.full?'checked':''}> Полный бак</label>
-     <details ${e.place||f.missed?'open':''}><summary class="muted" style="cursor:pointer;font-size:14px;padding:4px 0">Ещё: АЗС, цена за литр</summary><div class="form" style="padding-block:8px 0">
+     <details ${e.place||f.missed?'open':''}><summary class="muted" style="cursor:pointer;font-size:14px;padding:4px 0">Ещё: АЗС</summary><div class="form" style="padding-block:8px 0">
      ${fld('f_place','АЗС','list="azs" placeholder="Helios, Sinooil, КазМунайГаз…"',e.place||'')}
      <datalist id="azs">${[...new Set(['Helios','Sinooil','Qazaq Oil','Gazprom','Petrol Express','Royal Petrol','КазМунайГаз',...S.events.filter(x=>x.type==='fuel'&&x.place).map(x=>x.place)])].map(x=>`<option value="${esc(x)}">`).join('')}</datalist>
-     ${fld('f_p','Цена за литр','type="number" inputmode="decimal" step="0.01" min="0"',f.price??'')}
      <label class="check"><input type="checkbox" id="f_missed" ${f.missed?'checked':''}> Пропустил прошлую заправку (расход считать заново)</label></div></details>
-     <p class="note" style="margin:0">Достаточно суммы и пробега. Литры нужны только для расчёта расхода.</p>`;
+`;
   }else if(type==='service'||type==='repair'||type==='tuning'){
     const parts=e.parts&&e.parts.length?e.parts:[{name:'',price:''}];
     body+=fld('f_title','Что делали',`placeholder="${type==='service'?'Замена масла и фильтров':type==='repair'?'Замена задних колодок':'Покупка дисков'}" list="titles"`,e.title||'')+
@@ -1296,8 +1298,9 @@ document.addEventListener('input',ev=>{
   if(['g_title','g_km','g_mon','g_ld','g_lo'].includes(t.id))t.dataset.auto='';
   if(t.id==='s_name'){clearTimeout(t._h);t._h=setTimeout(()=>{const h=$('#s_hint');if(h)h.innerHTML=partHintHtml(t.value)},250)}
   if(t.classList.contains('p_price')||t.id==='f_work'){const tt=$('#f_total');if(tt)tt.textContent=nf.format(partsTotal())}
-  if(t.id==='f_l'||t.id==='f_p'){const l=num(val('f_l')),p=num(val('f_p'));if(l&&p)$('#f_cost').value=Math.round(l*p)}
-  if(t.id==='f_cost'){const l=num(val('f_l')),c=num(val('f_cost'));if(l&&c&&!num(val('f_p')))$('#f_p').value=(c/l).toFixed(1)}
+  if(t.id==='f_cost'||t.id==='f_l'||t.id==='f_p'){const L=$('#layer');const o=(L._fo||[]).filter(x=>x!==t.id);if(String(t.value).trim()!=='')o.push(t.id);L._fo=o.slice(-2);
+    if(L._fo.length===2){const rest=['f_cost','f_l','f_p'].find(x=>!L._fo.includes(x));const c=num(val('f_cost')),l=num(val('f_l')),p=num(val('f_p'));const el=$('#'+rest);
+      if(rest==='f_cost'&&l&&p)el.value=Math.round(l*p);else if(rest==='f_l'&&c&&p)el.value=(c/p).toFixed(2);else if(rest==='f_p'&&c&&l)el.value=(c/l).toFixed(1)}}
 });
 document.addEventListener('keydown',ev=>{if(ev.key==='Escape'){if($('#layer').innerHTML)closeSheet();else closeDial()}});
 document.addEventListener('change',ev=>{if(ev.target.id==='g_pick'&&ev.target.value!==''){applyWork(+ev.target.value);return}if(ev.target.id==='s_odom'){S.settings.odoMonthly=ev.target.checked;saveGarage();toast(ev.target.checked?'Буду спрашивать пробег раз в месяц':'Не буду спрашивать пробег')}});
